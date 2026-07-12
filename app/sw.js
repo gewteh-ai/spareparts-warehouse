@@ -1,5 +1,6 @@
-// Service worker — makes the app installable and work offline.
-const CACHE = 'spwh-v1';
+// Service worker — installable + offline, but always picks up new app versions.
+// Bump CACHE whenever the app changes so old copies are cleared.
+const CACHE = 'spwh-v3';
 const ASSETS = [
   './',
   './index.html',
@@ -20,14 +21,30 @@ self.addEventListener('activate', e => {
   );
 });
 
-// Cache-first, fall back to network (so it works fully offline once loaded).
+// NETWORK-FIRST for the page/app code (so new versions always load when online),
+// falling back to cache when offline. Static icons stay cache-first.
 self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET') return;
-  e.respondWith(
-    caches.match(e.request).then(hit => hit || fetch(e.request).then(resp => {
-      const copy = resp.clone();
-      caches.open(CACHE).then(c => c.put(e.request, copy)).catch(() => {});
-      return resp;
-    }).catch(() => caches.match('./index.html')))
-  );
+  const req = e.request;
+  const isPage = req.mode === 'navigate' ||
+                 req.destination === 'document' ||
+                 /\.(html|js|json)$/.test(new URL(req.url).pathname);
+
+  if (isPage) {
+    e.respondWith(
+      fetch(req).then(resp => {
+        const copy = resp.clone();
+        caches.open(CACHE).then(c => c.put(req, copy)).catch(() => {});
+        return resp;
+      }).catch(() => caches.match(req).then(hit => hit || caches.match('./index.html')))
+    );
+  } else {
+    e.respondWith(
+      caches.match(req).then(hit => hit || fetch(req).then(resp => {
+        const copy = resp.clone();
+        caches.open(CACHE).then(c => c.put(req, copy)).catch(() => {});
+        return resp;
+      }))
+    );
+  }
 });
