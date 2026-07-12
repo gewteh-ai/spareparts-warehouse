@@ -125,10 +125,10 @@
     </div>
   </section>
 
-  <!-- ADD -->
+  <!-- ADD / EDIT -->
   <section id="tab-add" style="display:none">
     <div class="panel">
-      <h2>Add a new part</h2>
+      <h2 id="add-title">Add a new part</h2>
       <div class="grid g3">
         <div><label>Part number / SKU *</label><input id="a-pn" placeholder="TRE-555-1001"/></div>
         <div><label>Part name *</label><input id="a-name" placeholder="Tie Rod End (Outer)"/></div>
@@ -154,7 +154,10 @@
       <div id="fit-rows" style="margin-top:10px"></div>
       <button class="btn ghost" onclick="addFitRow()">+ Add another vehicle</button>
 
-      <div style="margin-top:18px"><button class="btn green" onclick="saveePart()">Save part</button></div>
+      <div class="flex" style="margin-top:18px">
+        <button class="btn green" id="save-btn" onclick="saveePart()">Save part</button>
+        <button class="btn ghost" id="cancel-edit-btn" onclick="cancelEdit()" style="display:none">Cancel edit</button>
+      </div>
       <div id="add-msg" class="hint"></div>
     </div>
   </section>
@@ -203,12 +206,13 @@ function save(){ localStorage.setItem('spwh', JSON.stringify(DB)); }
 // ------------------------------------------------------------------ TABS
 document.getElementById('tabs').addEventListener('click',e=>{
   if(!e.target.classList.contains('tab'))return;
-  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
-  e.target.classList.add('active');
-  const tab=e.target.dataset.tab;
+  showTab(e.target.dataset.tab);
+});
+function showTab(tab){
+  document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active', t.dataset.tab===tab));
   ['find','inventory','add'].forEach(t=>document.getElementById('tab-'+t).style.display=(t===tab?'':'none'));
   if(tab==='inventory')renderInventory();
-});
+}
 
 // ------------------------------------------------------------------ helpers
 function opt(list,blank){ return (blank?`<option value="">${blank}</option>`:'')+
@@ -312,7 +316,7 @@ function renderInventory(){
       ${low.map(p=>p.name+' ('+p.qty+')').join(', ')}</div>` : '';
   const rows=DB.parts.filter(p=>!q||p.pn.toLowerCase().includes(q)||p.name.toLowerCase().includes(q)||(p.brand||'').toLowerCase().includes(q));
   document.getElementById('inv-table').innerHTML =
-    `<tr><th>Part</th><th>Brand</th><th>Part No.</th><th>Price</th><th>Stock</th><th>Bin</th><th>Adjust</th></tr>`+
+    `<tr><th>Part</th><th>Brand</th><th>Part No.</th><th>Price</th><th>Stock</th><th>Bin</th><th>Adjust</th><th>Edit</th></tr>`+
     rows.map((p,idx)=>{ const gi=DB.parts.indexOf(p); const low=p.qty<=p.reorder;
       return `<tr>
         <td>${p.name} ${p.engineSpecific?'<span class="badge eng">ENG</span>':''}</td>
@@ -322,6 +326,10 @@ function renderInventory(){
         <td class="flex">
           <button class="mini" onclick="adjust(${gi},1)">＋ in</button>
           <button class="mini" onclick="adjust(${gi},-1)">－ out</button>
+        </td>
+        <td class="flex">
+          <button class="mini" onclick="startEdit(${gi})">✏️ edit</button>
+          <button class="mini" onclick="deletePart(${gi})">🗑</button>
         </td></tr>`;
     }).join('');
 }
@@ -341,30 +349,96 @@ function fitRowHTML(){
     <button class="mini" onclick="this.parentElement.remove()" style="height:37px">✕</button>
   </div>`;
 }
-function addFitRow(){ const d=document.createElement('div'); d.innerHTML=fitRowHTML();
-  document.getElementById('fit-rows').appendChild(d.firstChild); }
+function addFitRow(f){ const d=document.createElement('div'); d.innerHTML=fitRowHTML();
+  const row=d.firstChild; document.getElementById('fit-rows').appendChild(row);
+  if(f){ // pre-fill when editing
+    row.querySelector('.fr-make').value=f.make||'';
+    row.querySelector('.fr-model').value=f.model||'';
+    row.querySelector('.fr-yfrom').value=f.yFrom||'';
+    row.querySelector('.fr-yto').value=f.yTo||'';
+    row.querySelector('.fr-engine').value=f.engine||'';
+    row.querySelector('.fr-trans').value=f.trans||'';
+    row.querySelector('.fr-drive').value=f.drive||'';
+  }
+  return row;
+}
+
+// ------------------------------------------------------------------ EDIT / DELETE
+let editIndex = null;
+
+function startEdit(i){
+  const p = DB.parts[i]; if(!p) return;
+  editIndex = i;
+  setV('a-pn',p.pn); setV('a-name',p.name); setV('a-cat',p.cat);
+  setV('a-brand',p.brand); setV('a-price',p.price); setV('a-cost',p.cost);
+  setV('a-oem',p.oem); setV('a-qty',p.qty); setV('a-reorder',p.reorder); setV('a-bin',p.bin);
+  document.getElementById('a-engspec').value = p.engineSpecific ? 'yes' : 'no';
+  document.getElementById('fit-rows').innerHTML='';
+  (p.fits && p.fits.length ? p.fits : [null]).forEach(f=>addFitRow(f));
+  document.getElementById('add-title').textContent = 'Edit part — '+p.name;
+  document.getElementById('save-btn').textContent = 'Update part';
+  document.getElementById('cancel-edit-btn').style.display='';
+  document.getElementById('add-msg').textContent='';
+  showTab('add');
+  window.scrollTo(0,0);
+}
+
+function cancelEdit(){
+  editIndex = null;
+  resetAddForm();
+  document.getElementById('add-title').textContent = 'Add a new part';
+  document.getElementById('save-btn').textContent = 'Save part';
+  document.getElementById('cancel-edit-btn').style.display='none';
+  document.getElementById('add-msg').textContent='';
+  showTab('inventory');
+}
+
+function deletePart(i){
+  const p = DB.parts[i]; if(!p) return;
+  if(!confirm('Delete "'+p.name+' ('+p.pn+')"? This cannot be undone.')) return;
+  DB.parts.splice(i,1); save(); renderInventory();
+}
+
+function setV(id,val){ document.getElementById(id).value = (val===undefined||val===null)?'':val; }
+function resetAddForm(){
+  ['a-pn','a-name','a-cat','a-brand','a-price','a-cost','a-oem','a-bin'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('a-qty').value=0; document.getElementById('a-reorder').value=0;
+  document.getElementById('a-engspec').value='no';
+  document.getElementById('fit-rows').innerHTML=''; addFitRow();
+}
 
 function saveePart(){
   const pn=v('a-pn'), name=v('a-name'), price=parseFloat(v('a-price'));
   const msg=document.getElementById('add-msg');
   if(!pn||!name||isNaN(price)){ msg.style.color='#fca5a5';
     msg.textContent='Part number, name and price are required.'; return; }
-  if(DB.parts.some(p=>p.pn.toLowerCase()===pn.toLowerCase())){ msg.style.color='#fca5a5';
-    msg.textContent='That part number already exists.'; return; }
+  // duplicate part-number check (ignore the part currently being edited)
+  if(DB.parts.some((p,idx)=>idx!==editIndex && p.pn.toLowerCase()===pn.toLowerCase())){
+    msg.style.color='#fca5a5'; msg.textContent='That part number already exists.'; return; }
   const fits=[...document.querySelectorAll('#fit-rows .fitrow')].map(r=>({
     make:r.querySelector('.fr-make').value, model:r.querySelector('.fr-model').value.trim(),
     yFrom:+r.querySelector('.fr-yfrom').value||null, yTo:+r.querySelector('.fr-yto').value||null,
     engine:r.querySelector('.fr-engine').value, trans:r.querySelector('.fr-trans').value,
     drive:r.querySelector('.fr-drive').value
   })).filter(f=>f.make&&f.model);
-  DB.parts.push({ pn,name,cat:v('a-cat'),brand:v('a-brand'),price,cost:parseFloat(v('a-cost'))||0,
+  const record={ pn,name,cat:v('a-cat'),brand:v('a-brand'),price,cost:parseFloat(v('a-cost'))||0,
     oem:v('a-oem'),qty:+v('a-qty')||0,reorder:+v('a-reorder')||0,bin:v('a-bin'),
-    engineSpecific:v('a-engspec')==='yes', fits });
-  save();
+    engineSpecific:v('a-engspec')==='yes', fits };
+
+  if(editIndex!==null){                 // UPDATE existing part
+    DB.parts[editIndex]=record; save();
+    editIndex=null;
+    document.getElementById('add-title').textContent='Add a new part';
+    document.getElementById('save-btn').textContent='Save part';
+    document.getElementById('cancel-edit-btn').style.display='none';
+    resetAddForm();
+    showTab('inventory');
+    return;
+  }
+
+  DB.parts.push(record); save();        // ADD new part
   msg.style.color='#86efac'; msg.textContent='✔ Saved "'+name+'". It is now searchable in Find Parts.';
-  ['a-pn','a-name','a-cat','a-brand','a-price','a-cost','a-oem','a-bin'].forEach(id=>document.getElementById(id).value='');
-  document.getElementById('a-qty').value=0; document.getElementById('a-reorder').value=0;
-  document.getElementById('fit-rows').innerHTML=''; addFitRow();
+  resetAddForm();
 }
 function v(id){return document.getElementById(id).value.trim();}
 
