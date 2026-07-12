@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Spare Parts Warehouse — Prototype</title>
+<style>
+  :root{
+    --bg:#0f1420; --panel:#182034; --panel2:#1f2940;
+    --line:#2a3550; --text:#e7ecf5; --muted:#95a1bd; --accent:#3b82f6;
+    --accent2:#22c55e; --warn:#f59e0b; --danger:#ef4444; --chip:#243150;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+    background:var(--bg);color:var(--text);font-size:15px}
+  header{background:linear-gradient(90deg,#132a4d,#0f1420);padding:16px 20px;
+    border-bottom:1px solid var(--line);position:sticky;top:0;z-index:10}
+  header h1{margin:0;font-size:19px;display:flex;align-items:center;gap:10px}
+  header .sub{color:var(--muted);font-size:12.5px;margin-top:3px}
+  .tabs{display:flex;gap:6px;padding:12px 20px 0;flex-wrap:wrap}
+  .tab{padding:9px 16px;border-radius:9px 9px 0 0;background:transparent;
+    border:1px solid transparent;color:var(--muted);cursor:pointer;font-size:14px}
+  .tab.active{background:var(--panel);color:var(--text);border-color:var(--line);
+    border-bottom-color:var(--panel)}
+  main{padding:18px 20px 60px}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;
+    padding:18px;margin-bottom:16px}
+  h2{font-size:16px;margin:0 0 14px}
+  label{display:block;font-size:12.5px;color:var(--muted);margin:0 0 4px}
+  select,input,textarea{width:100%;padding:9px 10px;background:#0d1322;
+    border:1px solid var(--line);border-radius:8px;color:var(--text);font-size:14px}
+  .grid{display:grid;gap:12px}
+  .g2{grid-template-columns:1fr 1fr}
+  .g3{grid-template-columns:1fr 1fr 1fr}
+  .g4{grid-template-columns:repeat(4,1fr)}
+  @media(max-width:680px){.g2,.g3,.g4{grid-template-columns:1fr 1fr}}
+  @media(max-width:460px){.g2,.g3,.g4{grid-template-columns:1fr}}
+  button.btn{background:var(--accent);color:#fff;border:0;padding:10px 16px;
+    border-radius:9px;cursor:pointer;font-size:14px;font-weight:600}
+  button.btn.green{background:var(--accent2)}
+  button.btn.ghost{background:transparent;border:1px solid var(--line);color:var(--text)}
+  button.mini{background:var(--chip);border:1px solid var(--line);color:var(--text);
+    border-radius:7px;padding:5px 9px;cursor:pointer;font-size:12.5px}
+  .card{background:var(--panel2);border:1px solid var(--line);border-radius:11px;
+    padding:14px;margin-bottom:12px}
+  .row{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+  .pname{font-weight:600;font-size:15.5px}
+  .pn{color:var(--muted);font-size:12.5px;font-family:ui-monospace,monospace}
+  .price{font-size:18px;font-weight:700;color:#7dd3fc;white-space:nowrap}
+  .chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:9px}
+  .chip{background:var(--chip);border:1px solid var(--line);border-radius:20px;
+    padding:3px 10px;font-size:11.5px;color:#c7d2fe}
+  .badge{border-radius:6px;padding:2px 8px;font-size:11px;font-weight:700}
+  .badge.eng{background:#7c2d12;color:#fed7aa;border:1px solid #b45309}
+  .badge.stockok{background:#14532d;color:#bbf7d0}
+  .badge.low{background:#7f1d1d;color:#fecaca}
+  .muted{color:var(--muted)}
+  .hint{font-size:12.5px;color:var(--muted);margin-top:6px}
+  .warnbox{background:#3b2f0b;border:1px solid var(--warn);color:#fde68a;
+    padding:10px 12px;border-radius:9px;font-size:13px;margin-bottom:12px}
+  .empty{text-align:center;color:var(--muted);padding:30px}
+  table{width:100%;border-collapse:collapse;font-size:13.5px}
+  th,td{text-align:left;padding:9px 8px;border-bottom:1px solid var(--line)}
+  th{color:var(--muted);font-weight:600;font-size:12px}
+  .fitrow{display:grid;grid-template-columns:repeat(6,1fr) auto;gap:8px;
+    align-items:end;margin-bottom:8px}
+  @media(max-width:820px){.fitrow{grid-template-columns:1fr 1fr}}
+  .tag-alt{color:var(--accent2);font-size:12px;margin-top:2px}
+  .flex{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+</style>
+</head>
+<body>
+<header>
+  <h1>🔧 Spare Parts Warehouse <span class="muted" style="font-size:12px;font-weight:400">Sarawak · MYR</span></h1>
+  <div class="sub">Prototype — data saves in this browser. Find parts by exact vehicle fitment, manage stock, add new parts.</div>
+</header>
+
+<div class="tabs" id="tabs">
+  <div class="tab active" data-tab="find">🔍 Find Parts</div>
+  <div class="tab" data-tab="inventory">📦 Inventory</div>
+  <div class="tab" data-tab="add">➕ Add Part</div>
+</div>
+
+<main>
+  <!-- FIND -->
+  <section id="tab-find">
+    <div class="panel">
+      <h2>Find parts for a customer's vehicle</h2>
+      <div class="grid g4">
+        <div><label>Make</label><select id="f-make"></select></div>
+        <div><label>Model</label><select id="f-model"></select></div>
+        <div><label>Year</label><select id="f-year"></select></div>
+        <div><label>Engine</label><select id="f-engine"></select></div>
+      </div>
+      <div class="grid g4" style="margin-top:12px">
+        <div><label>Transmission</label><select id="f-trans"></select></div>
+        <div><label>Drivetrain</label><select id="f-drive"></select></div>
+        <div style="grid-column:span 2"><label>Or search by part number / name / OEM</label>
+          <input id="f-search" placeholder="e.g. tie rod, STR-DENSO, 28100-30050" /></div>
+      </div>
+      <div class="flex" style="margin-top:12px">
+        <button class="btn" onclick="runFind()">Show matching parts</button>
+        <button class="btn ghost" onclick="clearFind()">Reset</button>
+      </div>
+    </div>
+    <div id="find-results"></div>
+  </section>
+
+  <!-- INVENTORY -->
+  <section id="tab-inventory" style="display:none">
+    <div id="low-alerts"></div>
+    <div class="panel">
+      <div class="row"><h2 style="margin:0">All stock</h2>
+        <input id="inv-search" placeholder="filter…" style="max-width:220px" oninput="renderInventory()"/></div>
+      <div style="overflow:auto;margin-top:12px">
+        <table id="inv-table"></table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ADD -->
+  <section id="tab-add" style="display:none">
+    <div class="panel">
+      <h2>Add a new part</h2>
+      <div class="grid g3">
+        <div><label>Part number / SKU *</label><input id="a-pn" placeholder="TRE-555-1001"/></div>
+        <div><label>Part name *</label><input id="a-name" placeholder="Tie Rod End (Outer)"/></div>
+        <div><label>Category</label><input id="a-cat" placeholder="Steering"/></div>
+      </div>
+      <div class="grid g4" style="margin-top:12px">
+        <div><label>Brand</label><input id="a-brand" placeholder="555"/></div>
+        <div><label>Selling price (RM) *</label><input id="a-price" type="number" step="0.01" placeholder="85.00"/></div>
+        <div><label>Cost (RM)</label><input id="a-cost" type="number" step="0.01" placeholder="52.00"/></div>
+        <div><label>OEM / cross-ref no.</label><input id="a-oem" placeholder="45046-09280"/></div>
+      </div>
+      <div class="grid g4" style="margin-top:12px">
+        <div><label>Qty in stock</label><input id="a-qty" type="number" value="0"/></div>
+        <div><label>Reorder point</label><input id="a-reorder" type="number" value="0"/></div>
+        <div><label>Bin / shelf</label><input id="a-bin" placeholder="A-12"/></div>
+        <div><label>Engine-specific?</label>
+          <select id="a-engspec"><option value="no">No — fits any engine</option>
+          <option value="yes">Yes — must match engine</option></select></div>
+      </div>
+
+      <h2 style="margin:20px 0 8px">Compatible vehicles (add as many as needed)</h2>
+      <div class="hint">Leave a factor as "Any" if it doesn't affect fitment. Engine-specific parts (starters, ECUs) should set the engine.</div>
+      <div id="fit-rows" style="margin-top:10px"></div>
+      <button class="btn ghost" onclick="addFitRow()">+ Add another vehicle</button>
+
+      <div style="margin-top:18px"><button class="btn green" onclick="saveePart()">Save part</button></div>
+      <div id="add-msg" class="hint"></div>
+    </div>
+  </section>
+</main>
+
+<script>
+// ------------------------------------------------------------------ DATA
+const OPTIONS = {
+  makes: ['Toyota','Ford','Mazda','Nissan','Isuzu','Perodua','Proton'],
+  models: {
+    Toyota:['Hilux','Fortuner','Vios','Innova'], Ford:['Ranger','Everest'],
+    Mazda:['BT-50','CX-5'], Nissan:['Navara','Almera'], Isuzu:['D-Max','MU-X'],
+    Perodua:['Myvi','Axia','Bezza'], Proton:['Saga','X70']
+  },
+  engines:['2KD','2TR','1GD','WLAT','P4AT','YD25','4JJ1','1NR','1KR'],
+  transmissions:['Auto','Manual'],
+  drivetrains:['4x2','4x4']
+};
+
+const SEED = [
+  { pn:'TRE-555-1001', name:'Tie Rod End (Outer)', cat:'Steering', brand:'555',
+    price:85, cost:52, oem:'45046-09280', qty:24, reorder:6, bin:'A-12', engineSpecific:false,
+    fits:[ {make:'Ford',model:'Ranger',yFrom:2011,yTo:2020,engine:'',trans:'',drive:'4x4'},
+           {make:'Mazda',model:'BT-50',yFrom:2011,yTo:2020,engine:'',trans:'',drive:'4x4'} ] },
+  { pn:'TRE-CTR-2001', name:'Tie Rod End (Outer)', cat:'Steering', brand:'CTR (economy)',
+    price:62, cost:38, oem:'45046-09280', qty:15, reorder:5, bin:'A-13', engineSpecific:false,
+    fits:[ {make:'Ford',model:'Ranger',yFrom:2011,yTo:2020,engine:'',trans:'',drive:'4x4'},
+           {make:'Mazda',model:'BT-50',yFrom:2011,yTo:2020,engine:'',trans:'',drive:'4x4'} ] },
+  { pn:'STR-DENSO-2KD', name:'Starter Motor', cat:'Electrical', brand:'Denso',
+    price:480, cost:350, oem:'28100-30050', qty:3, reorder:2, bin:'E-04', engineSpecific:true,
+    fits:[ {make:'Toyota',model:'Hilux',yFrom:2005,yTo:2015,engine:'2KD',trans:'',drive:''},
+           {make:'Toyota',model:'Fortuner',yFrom:2005,yTo:2015,engine:'2KD',trans:'',drive:''} ] },
+  { pn:'CLK-EXEDY-HLX', name:'Clutch Kit', cat:'Transmission', brand:'Exedy',
+    price:640, cost:470, oem:'', qty:2, reorder:2, bin:'C-08', engineSpecific:false,
+    fits:[ {make:'Toyota',model:'Hilux',yFrom:2005,yTo:2015,engine:'2KD',trans:'Manual',drive:''} ] },
+  { pn:'BMP-FR-HLX-05', name:'Front Bumper', cat:'Body', brand:'Aftermarket',
+    price:320, cost:210, oem:'', qty:4, reorder:1, bin:'B-01', engineSpecific:false,
+    fits:[ {make:'Toyota',model:'Hilux',yFrom:2005,yTo:2015,engine:'',trans:'',drive:''} ] }
+];
+
+let DB = load();
+function load(){ try{ const s=localStorage.getItem('spwh'); if(s) return JSON.parse(s);}catch(e){}
+  return {parts:JSON.parse(JSON.stringify(SEED))}; }
+function save(){ localStorage.setItem('spwh', JSON.stringify(DB)); }
+
+// ------------------------------------------------------------------ TABS
+document.getElementById('tabs').addEventListener('click',e=>{
+  if(!e.target.classList.contains('tab'))return;
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  e.target.classList.add('active');
+  const tab=e.target.dataset.tab;
+  ['find','inventory','add'].forEach(t=>document.getElementById('tab-'+t).style.display=(t===tab?'':'none'));
+  if(tab==='inventory')renderInventory();
+});
+
+// ------------------------------------------------------------------ helpers
+function opt(list,blank){ return (blank?`<option value="">${blank}</option>`:'')+
+  list.map(x=>`<option>${x}</option>`).join(''); }
+const RM = n => 'RM '+Number(n||0).toFixed(2);
+
+// ------------------------------------------------------------------ FIND
+function initFind(){
+  document.getElementById('f-make').innerHTML = opt(OPTIONS.makes,'Any');
+  document.getElementById('f-year').innerHTML = opt(range(1998,2026).reverse().map(String),'Any');
+  document.getElementById('f-engine').innerHTML = opt(OPTIONS.engines,'Any');
+  document.getElementById('f-trans').innerHTML = opt(OPTIONS.transmissions,'Any');
+  document.getElementById('f-drive').innerHTML = opt(OPTIONS.drivetrains,'Any');
+  document.getElementById('f-model').innerHTML = opt([],'Any');
+  document.getElementById('f-make').onchange = ()=>{
+    const m=document.getElementById('f-make').value;
+    document.getElementById('f-model').innerHTML = opt(m?(OPTIONS.models[m]||[]):[],'Any');
+  };
+}
+function range(a,b){const r=[];for(let i=a;i<=b;i++)r.push(i);return r;}
+function clearFind(){ initFind(); document.getElementById('f-search').value='';
+  document.getElementById('find-results').innerHTML=''; }
+
+function fitMatches(f,sel){
+  if(sel.make && f.make!==sel.make) return false;
+  if(sel.model && f.model!==sel.model) return false;
+  if(sel.year){ const y=+sel.year; if(f.yFrom&&y<f.yFrom)return false; if(f.yTo&&y>f.yTo)return false; }
+  if(sel.engine && f.engine && f.engine!==sel.engine) return false;
+  if(sel.trans && f.trans && f.trans!==sel.trans) return false;
+  if(sel.drive && f.drive && f.drive!==sel.drive) return false;
+  return true;
+}
+
+function runFind(){
+  const q=document.getElementById('f-search').value.trim().toLowerCase();
+  const sel={ make:val('f-make'),model:val('f-model'),year:val('f-year'),
+    engine:val('f-engine'),trans:val('f-trans'),drive:val('f-drive') };
+  const box=document.getElementById('find-results');
+  let results=[];
+
+  if(q){
+    results = DB.parts.filter(p =>
+      p.pn.toLowerCase().includes(q) || p.name.toLowerCase().includes(q) ||
+      (p.brand||'').toLowerCase().includes(q) || (p.oem||'').toLowerCase().includes(q));
+  } else {
+    if(!sel.make){ box.innerHTML='<div class="panel empty">Pick a Make (or use search) to begin.</div>'; return; }
+    results = DB.parts.filter(p => p.fits.some(f=>fitMatches(f,sel)));
+  }
+
+  // Warn if an engine-specific part is in play but no engine chosen
+  let warn='';
+  if(!q && !sel.engine && results.some(p=>p.engineSpecific)){
+    warn = `<div class="warnbox">⚠️ Some matching parts are <b>engine-specific</b> (e.g. starters). 
+      Select the <b>engine code</b> above to be sure the customer gets the correct part.</div>`;
+  }
+
+  if(!results.length){ box.innerHTML=warn+'<div class="panel empty">No matching parts. Try fewer filters, or add this part in the “Add Part” tab.</div>'; return; }
+
+  // group same part name to show brand/price options together
+  const groups={};
+  results.forEach(p=>{ (groups[p.name]=groups[p.name]||[]).push(p); });
+
+  box.innerHTML = warn + Object.entries(groups).map(([name,arr])=>{
+    arr.sort((a,b)=>a.price-b.price);
+    const alt = arr.length>1 ? `<div class="tag-alt">${arr.length} brand options — priced ${RM(arr[0].price)} to ${RM(arr[arr.length-1].price)}</div>`:'';
+    return arr.map((p,i)=>partCard(p, i===0?name:null)).join('') ;
+  }).join('');
+}
+function val(id){return document.getElementById(id).value;}
+
+function partCard(p, groupName){
+  const low = p.qty<=p.reorder;
+  const fitChips = p.fits.map(f=>{
+    const bits=[f.make,f.model,(f.yFrom||f.yTo)?`${f.yFrom||''}-${f.yTo||''}`:'',
+      f.engine?('🛢 '+f.engine):'', f.trans, f.drive].filter(Boolean);
+    return `<span class="chip">${bits.join(' · ')}</span>`;
+  }).join('');
+  return `<div class="card">
+    <div class="row">
+      <div>
+        <div class="pname">${p.name} <span class="muted">— ${p.brand||''}</span>
+          ${p.engineSpecific?'<span class="badge eng">ENGINE-SPECIFIC</span>':''}</div>
+        <div class="pn">${p.pn}${p.oem?(' · OEM '+p.oem):''}</div>
+      </div>
+      <div style="text-align:right">
+        <div class="price">${RM(p.price)}</div>
+        <div class="${low?'badge low':'badge stockok'}" style="margin-top:6px;display:inline-block">
+          ${low?'LOW: ':''}${p.qty} in stock</div>
+      </div>
+    </div>
+    <div class="chips">${fitChips}</div>
+  </div>`;
+}
+
+// ------------------------------------------------------------------ INVENTORY
+function renderInventory(){
+  const q=(document.getElementById('inv-search').value||'').toLowerCase();
+  const low=DB.parts.filter(p=>p.qty<=p.reorder);
+  document.getElementById('low-alerts').innerHTML = low.length ?
+    `<div class="warnbox">🔔 <b>${low.length}</b> part(s) at/below reorder point: 
+      ${low.map(p=>p.name+' ('+p.qty+')').join(', ')}</div>` : '';
+  const rows=DB.parts.filter(p=>!q||p.pn.toLowerCase().includes(q)||p.name.toLowerCase().includes(q)||(p.brand||'').toLowerCase().includes(q));
+  document.getElementById('inv-table').innerHTML =
+    `<tr><th>Part</th><th>Brand</th><th>Part No.</th><th>Price</th><th>Stock</th><th>Bin</th><th>Adjust</th></tr>`+
+    rows.map((p,idx)=>{ const gi=DB.parts.indexOf(p); const low=p.qty<=p.reorder;
+      return `<tr>
+        <td>${p.name} ${p.engineSpecific?'<span class="badge eng">ENG</span>':''}</td>
+        <td>${p.brand||''}</td><td class="pn">${p.pn}</td><td>${RM(p.price)}</td>
+        <td><span class="${low?'badge low':'badge stockok'}">${p.qty}</span></td>
+        <td>${p.bin||''}</td>
+        <td class="flex">
+          <button class="mini" onclick="adjust(${gi},1)">＋ in</button>
+          <button class="mini" onclick="adjust(${gi},-1)">－ out</button>
+        </td></tr>`;
+    }).join('');
+}
+function adjust(i,d){ DB.parts[i].qty=Math.max(0,DB.parts[i].qty+d); save(); renderInventory(); }
+
+// ------------------------------------------------------------------ ADD
+function fitRowHTML(){
+  return `<div class="fitrow">
+    <div><label>Make</label><select class="fr-make">${opt(OPTIONS.makes,'—')}</select></div>
+    <div><label>Model</label><input class="fr-model" placeholder="Hilux"/></div>
+    <div><label>Year from</label><input class="fr-yfrom" type="number" placeholder="2005"/></div>
+    <div><label>Year to</label><input class="fr-yto" type="number" placeholder="2015"/></div>
+    <div><label>Engine</label><select class="fr-engine">${opt(OPTIONS.engines,'Any')}</select></div>
+    <div><label>Trans</label><select class="fr-trans">${opt(OPTIONS.transmissions,'Any')}</select></div>
+    <div><label>Drive</label><select class="fr-drive">${opt(OPTIONS.drivetrains,'Any')}</select>
+      </div>
+    <button class="mini" onclick="this.parentElement.remove()" style="height:37px">✕</button>
+  </div>`;
+}
+function addFitRow(){ const d=document.createElement('div'); d.innerHTML=fitRowHTML();
+  document.getElementById('fit-rows').appendChild(d.firstChild); }
+
+function saveePart(){
+  const pn=v('a-pn'), name=v('a-name'), price=parseFloat(v('a-price'));
+  const msg=document.getElementById('add-msg');
+  if(!pn||!name||isNaN(price)){ msg.style.color='#fca5a5';
+    msg.textContent='Part number, name and price are required.'; return; }
+  if(DB.parts.some(p=>p.pn.toLowerCase()===pn.toLowerCase())){ msg.style.color='#fca5a5';
+    msg.textContent='That part number already exists.'; return; }
+  const fits=[...document.querySelectorAll('#fit-rows .fitrow')].map(r=>({
+    make:r.querySelector('.fr-make').value, model:r.querySelector('.fr-model').value.trim(),
+    yFrom:+r.querySelector('.fr-yfrom').value||null, yTo:+r.querySelector('.fr-yto').value||null,
+    engine:r.querySelector('.fr-engine').value, trans:r.querySelector('.fr-trans').value,
+    drive:r.querySelector('.fr-drive').value
+  })).filter(f=>f.make&&f.model);
+  DB.parts.push({ pn,name,cat:v('a-cat'),brand:v('a-brand'),price,cost:parseFloat(v('a-cost'))||0,
+    oem:v('a-oem'),qty:+v('a-qty')||0,reorder:+v('a-reorder')||0,bin:v('a-bin'),
+    engineSpecific:v('a-engspec')==='yes', fits });
+  save();
+  msg.style.color='#86efac'; msg.textContent='✔ Saved "'+name+'". It is now searchable in Find Parts.';
+  ['a-pn','a-name','a-cat','a-brand','a-price','a-cost','a-oem','a-bin'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('a-qty').value=0; document.getElementById('a-reorder').value=0;
+  document.getElementById('fit-rows').innerHTML=''; addFitRow();
+}
+function v(id){return document.getElementById(id).value.trim();}
+
+// ------------------------------------------------------------------ INIT
+initFind(); addFitRow();
+</script>
+</body>
+</html>
