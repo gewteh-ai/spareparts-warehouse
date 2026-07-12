@@ -74,12 +74,43 @@
   @media(max-width:820px){.fitrow{grid-template-columns:1fr 1fr}}
   .tag-alt{color:var(--accent2);font-size:12px;margin-top:2px}
   .flex{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+  .login-wrap{max-width:380px;margin:8vh auto;padding:0 16px}
+  .pill{background:var(--chip);border:1px solid var(--line);border-radius:20px;
+    padding:4px 10px;font-size:12px;color:#c7d2fe}
 </style>
 </head>
 <body>
+
+<!-- ============================ LOGIN ============================ -->
+<div id="login" style="display:none">
+  <div class="login-wrap">
+    <h1 style="display:flex;align-items:center;gap:8px">🔧 Spare Parts Warehouse</h1>
+    <div class="panel" style="margin-top:16px">
+      <h2>Staff sign in</h2>
+      <label>Email</label>
+      <input id="login-email" type="email" autocomplete="username" placeholder="you@shop.com"/>
+      <label style="margin-top:10px">Password</label>
+      <input id="login-pass" type="password" autocomplete="current-password"
+        placeholder="••••••••" onkeydown="if(event.key==='Enter')doLogin()"/>
+      <div style="margin-top:14px"><button class="btn" onclick="doLogin()">Sign in</button></div>
+      <div id="login-msg" class="hint"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================ APP ============================ -->
+<div id="app" style="display:none">
 <header>
-  <h1>🔧 Spare Parts Warehouse <span class="muted" style="font-size:12px;font-weight:400">Sarawak · MYR</span></h1>
-  <div class="sub">Prototype — data saves in this browser. Find parts by exact vehicle fitment, manage stock, add new parts.</div>
+  <div class="row">
+    <div>
+      <h1>🔧 Spare Parts Warehouse <span class="muted" style="font-size:12px;font-weight:400">Sarawak · MYR</span></h1>
+      <div class="sub">Shared live inventory. Find parts by vehicle fitment, manage stock, add & edit parts.</div>
+    </div>
+    <div class="flex" style="justify-content:flex-end">
+      <span class="pill" id="who"></span>
+      <button class="mini" onclick="doLogout()">Sign out</button>
+    </div>
+  </div>
 </header>
 
 <div class="tabs" id="tabs">
@@ -162,9 +193,18 @@
     </div>
   </section>
 </main>
+</div><!-- /#app -->
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
-// ------------------------------------------------------------------ DATA
+// ==================================================================
+// CLOUD CONFIG  —  paste your Supabase project values here.
+// (Safe to be public: the anon key only works together with a login,
+//  because Row Level Security protects the data.)
+// ==================================================================
+const SUPABASE_URL      = 'YOUR_SUPABASE_URL';
+const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY';
+
 const OPTIONS = {
   makes: ['Toyota','Ford','Mazda','Nissan','Isuzu','Perodua','Proton'],
   models: {
@@ -177,31 +217,75 @@ const OPTIONS = {
   drivetrains:['4x2','4x4']
 };
 
-const SEED = [
-  { pn:'TRE-555-1001', name:'Tie Rod End (Outer)', cat:'Steering', brand:'555',
-    price:85, cost:52, oem:'45046-09280', qty:24, reorder:6, bin:'A-12', engineSpecific:false,
-    fits:[ {make:'Ford',model:'Ranger',yFrom:2011,yTo:2020,engine:'',trans:'',drive:'4x4'},
-           {make:'Mazda',model:'BT-50',yFrom:2011,yTo:2020,engine:'',trans:'',drive:'4x4'} ] },
-  { pn:'TRE-CTR-2001', name:'Tie Rod End (Outer)', cat:'Steering', brand:'CTR (economy)',
-    price:62, cost:38, oem:'45046-09280', qty:15, reorder:5, bin:'A-13', engineSpecific:false,
-    fits:[ {make:'Ford',model:'Ranger',yFrom:2011,yTo:2020,engine:'',trans:'',drive:'4x4'},
-           {make:'Mazda',model:'BT-50',yFrom:2011,yTo:2020,engine:'',trans:'',drive:'4x4'} ] },
-  { pn:'STR-DENSO-2KD', name:'Starter Motor', cat:'Electrical', brand:'Denso',
-    price:480, cost:350, oem:'28100-30050', qty:3, reorder:2, bin:'E-04', engineSpecific:true,
-    fits:[ {make:'Toyota',model:'Hilux',yFrom:2005,yTo:2015,engine:'2KD',trans:'',drive:''},
-           {make:'Toyota',model:'Fortuner',yFrom:2005,yTo:2015,engine:'2KD',trans:'',drive:''} ] },
-  { pn:'CLK-EXEDY-HLX', name:'Clutch Kit', cat:'Transmission', brand:'Exedy',
-    price:640, cost:470, oem:'', qty:2, reorder:2, bin:'C-08', engineSpecific:false,
-    fits:[ {make:'Toyota',model:'Hilux',yFrom:2005,yTo:2015,engine:'2KD',trans:'Manual',drive:''} ] },
-  { pn:'BMP-FR-HLX-05', name:'Front Bumper', cat:'Body', brand:'Aftermarket',
-    price:320, cost:210, oem:'', qty:4, reorder:1, bin:'B-01', engineSpecific:false,
-    fits:[ {make:'Toyota',model:'Hilux',yFrom:2005,yTo:2015,engine:'',trans:'',drive:''} ] }
-];
+let sb = null;                 // supabase client
+let DB = { parts: [] };        // in-memory cache of parts (from cloud)
+let editId = null;             // id of the part being edited (or null)
 
-let DB = load();
-function load(){ try{ const s=localStorage.getItem('spwh'); if(s) return JSON.parse(s);}catch(e){}
-  return {parts:JSON.parse(JSON.stringify(SEED))}; }
-function save(){ localStorage.setItem('spwh', JSON.stringify(DB)); }
+// ------------------------------------------------------------------ BOOT
+function cloudConfigured(){
+  return !/^YOUR_/.test(SUPABASE_URL) && !/^YOUR_/.test(SUPABASE_ANON_KEY);
+}
+
+window.addEventListener('load', boot);
+async function boot(){
+  if('serviceWorker' in navigator){ navigator.serviceWorker.register('sw.js').catch(()=>{}); }
+  initFind(); addFitRow();
+
+  if(!cloudConfigured()){
+    showLogin();
+    document.getElementById('login-msg').style.color='#fca5a5';
+    document.getElementById('login-msg').innerHTML =
+      'Cloud not configured yet. Add your Supabase URL and anon key in index.html (see SETUP_CLOUD.md).';
+    return;
+  }
+  sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  const { data:{ session } } = await sb.auth.getSession();
+  if(session){ enterApp(); } else { showLogin(); }
+  sb.auth.onAuthStateChange((_e, s)=>{ if(s){ enterApp(); } else { showLogin(); } });
+}
+
+function showLogin(){
+  document.getElementById('login').style.display='';
+  document.getElementById('app').style.display='none';
+}
+async function enterApp(){
+  document.getElementById('login').style.display='none';
+  document.getElementById('app').style.display='';
+  try{ const { data } = await sb.auth.getUser(); document.getElementById('who').textContent = data?.user?.email || ''; }catch(e){}
+  await loadParts();
+  showTab('find');
+}
+
+async function doLogin(){
+  const email=document.getElementById('login-email').value.trim();
+  const password=document.getElementById('login-pass').value;
+  const msg=document.getElementById('login-msg');
+  if(!email||!password){ msg.style.color='#fca5a5'; msg.textContent='Enter email and password.'; return; }
+  msg.style.color='#95a1bd'; msg.textContent='Signing in…';
+  const { error } = await sb.auth.signInWithPassword({ email, password });
+  if(error){ msg.style.color='#fca5a5'; msg.textContent=error.message; }
+  else { msg.textContent=''; }
+}
+async function doLogout(){ if(sb) await sb.auth.signOut(); }
+
+// ------------------------------------------------------------------ CLOUD DATA LAYER
+function fromRow(r){ return {
+  id:r.id, pn:r.pn, name:r.name, cat:r.cat, brand:r.brand,
+  price:+r.price||0, cost:+r.cost||0, oem:r.oem, qty:+r.qty||0,
+  reorder:+r.reorder||0, bin:r.bin, engineSpecific:!!r.engine_specific,
+  fits: Array.isArray(r.fits)?r.fits:[] }; }
+function toRow(p){ return {
+  pn:p.pn, name:p.name, cat:p.cat, brand:p.brand, price:p.price, cost:p.cost,
+  oem:p.oem, qty:p.qty, reorder:p.reorder, bin:p.bin,
+  engine_specific:p.engineSpecific, fits:p.fits, updated_at:new Date().toISOString() }; }
+
+async function loadParts(){
+  const { data, error } = await sb.from('parts').select('*').order('name');
+  if(error){ alert('Could not load parts: '+error.message); return; }
+  DB.parts = (data||[]).map(fromRow);
+  const active=document.querySelector('.tab.active');
+  if(active && active.dataset.tab==='inventory') renderInventory();
+}
 
 // ------------------------------------------------------------------ TABS
 document.getElementById('tabs').addEventListener('click',e=>{
@@ -218,6 +302,9 @@ function showTab(tab){
 function opt(list,blank){ return (blank?`<option value="">${blank}</option>`:'')+
   list.map(x=>`<option>${x}</option>`).join(''); }
 const RM = n => 'RM '+Number(n||0).toFixed(2);
+function val(id){return document.getElementById(id).value;}
+function v(id){return document.getElementById(id).value.trim();}
+function setV(id,val){ document.getElementById(id).value = (val===undefined||val===null)?'':val; }
 
 // ------------------------------------------------------------------ FIND
 function initFind(){
@@ -259,10 +346,9 @@ function runFind(){
       (p.brand||'').toLowerCase().includes(q) || (p.oem||'').toLowerCase().includes(q));
   } else {
     if(!sel.make){ box.innerHTML='<div class="panel empty">Pick a Make (or use search) to begin.</div>'; return; }
-    results = DB.parts.filter(p => p.fits.some(f=>fitMatches(f,sel)));
+    results = DB.parts.filter(p => (p.fits||[]).some(f=>fitMatches(f,sel)));
   }
 
-  // Warn if an engine-specific part is in play but no engine chosen
   let warn='';
   if(!q && !sel.engine && results.some(p=>p.engineSpecific)){
     warn = `<div class="warnbox">⚠️ Some matching parts are <b>engine-specific</b> (e.g. starters). 
@@ -271,21 +357,18 @@ function runFind(){
 
   if(!results.length){ box.innerHTML=warn+'<div class="panel empty">No matching parts. Try fewer filters, or add this part in the “Add Part” tab.</div>'; return; }
 
-  // group same part name to show brand/price options together
   const groups={};
   results.forEach(p=>{ (groups[p.name]=groups[p.name]||[]).push(p); });
 
   box.innerHTML = warn + Object.entries(groups).map(([name,arr])=>{
     arr.sort((a,b)=>a.price-b.price);
-    const alt = arr.length>1 ? `<div class="tag-alt">${arr.length} brand options — priced ${RM(arr[0].price)} to ${RM(arr[arr.length-1].price)}</div>`:'';
-    return arr.map((p,i)=>partCard(p, i===0?name:null)).join('') ;
+    return arr.map((p,i)=>partCard(p, i===0?name:null)).join('');
   }).join('');
 }
-function val(id){return document.getElementById(id).value;}
 
 function partCard(p, groupName){
   const low = p.qty<=p.reorder;
-  const fitChips = p.fits.map(f=>{
+  const fitChips = (p.fits||[]).map(f=>{
     const bits=[f.make,f.model,(f.yFrom||f.yTo)?`${f.yFrom||''}-${f.yTo||''}`:'',
       f.engine?('🛢 '+f.engine):'', f.trans, f.drive].filter(Boolean);
     return `<span class="chip">${bits.join(' · ')}</span>`;
@@ -317,25 +400,31 @@ function renderInventory(){
   const rows=DB.parts.filter(p=>!q||p.pn.toLowerCase().includes(q)||p.name.toLowerCase().includes(q)||(p.brand||'').toLowerCase().includes(q));
   document.getElementById('inv-table').innerHTML =
     `<tr><th>Part</th><th>Brand</th><th>Part No.</th><th>Price</th><th>Stock</th><th>Bin</th><th>Adjust</th><th>Edit</th></tr>`+
-    rows.map((p,idx)=>{ const gi=DB.parts.indexOf(p); const low=p.qty<=p.reorder;
+    rows.map(p=>{ const low=p.qty<=p.reorder;
       return `<tr>
         <td>${p.name} ${p.engineSpecific?'<span class="badge eng">ENG</span>':''}</td>
         <td>${p.brand||''}</td><td class="pn">${p.pn}</td><td>${RM(p.price)}</td>
         <td><span class="${low?'badge low':'badge stockok'}">${p.qty}</span></td>
         <td>${p.bin||''}</td>
         <td class="flex">
-          <button class="mini" onclick="adjust(${gi},1)">＋ in</button>
-          <button class="mini" onclick="adjust(${gi},-1)">－ out</button>
+          <button class="mini" onclick="adjust(${p.id},1)">＋ in</button>
+          <button class="mini" onclick="adjust(${p.id},-1)">－ out</button>
         </td>
         <td class="flex">
-          <button class="mini" onclick="startEdit(${gi})">✏️ edit</button>
-          <button class="mini" onclick="deletePart(${gi})">🗑</button>
+          <button class="mini" onclick="startEdit(${p.id})">✏️ edit</button>
+          <button class="mini" onclick="deletePart(${p.id})">🗑</button>
         </td></tr>`;
     }).join('');
 }
-function adjust(i,d){ DB.parts[i].qty=Math.max(0,DB.parts[i].qty+d); save(); renderInventory(); }
+async function adjust(id,d){
+  const p=DB.parts.find(x=>x.id===id); if(!p) return;
+  const newQty=Math.max(0,p.qty+d);
+  const { error } = await sb.from('parts').update({qty:newQty, updated_at:new Date().toISOString()}).eq('id',id);
+  if(error){ alert(error.message); return; }
+  p.qty=newQty; renderInventory();
+}
 
-// ------------------------------------------------------------------ ADD
+// ------------------------------------------------------------------ ADD/EDIT FORM
 function fitRowHTML(){
   return `<div class="fitrow">
     <div><label>Make</label><select class="fr-make">${opt(OPTIONS.makes,'—')}</select></div>
@@ -344,14 +433,13 @@ function fitRowHTML(){
     <div><label>Year to</label><input class="fr-yto" type="number" placeholder="2015"/></div>
     <div><label>Engine</label><select class="fr-engine">${opt(OPTIONS.engines,'Any')}</select></div>
     <div><label>Trans</label><select class="fr-trans">${opt(OPTIONS.transmissions,'Any')}</select></div>
-    <div><label>Drive</label><select class="fr-drive">${opt(OPTIONS.drivetrains,'Any')}</select>
-      </div>
+    <div><label>Drive</label><select class="fr-drive">${opt(OPTIONS.drivetrains,'Any')}</select></div>
     <button class="mini" onclick="this.parentElement.remove()" style="height:37px">✕</button>
   </div>`;
 }
 function addFitRow(f){ const d=document.createElement('div'); d.innerHTML=fitRowHTML();
   const row=d.firstChild; document.getElementById('fit-rows').appendChild(row);
-  if(f){ // pre-fill when editing
+  if(f){
     row.querySelector('.fr-make').value=f.make||'';
     row.querySelector('.fr-model').value=f.model||'';
     row.querySelector('.fr-yfrom').value=f.yFrom||'';
@@ -363,18 +451,15 @@ function addFitRow(f){ const d=document.createElement('div'); d.innerHTML=fitRow
   return row;
 }
 
-// ------------------------------------------------------------------ EDIT / DELETE
-let editIndex = null;
-
-function startEdit(i){
-  const p = DB.parts[i]; if(!p) return;
-  editIndex = i;
+function startEdit(id){
+  const p=DB.parts.find(x=>x.id===id); if(!p) return;
+  editId=id;
   setV('a-pn',p.pn); setV('a-name',p.name); setV('a-cat',p.cat);
   setV('a-brand',p.brand); setV('a-price',p.price); setV('a-cost',p.cost);
   setV('a-oem',p.oem); setV('a-qty',p.qty); setV('a-reorder',p.reorder); setV('a-bin',p.bin);
   document.getElementById('a-engspec').value = p.engineSpecific ? 'yes' : 'no';
   document.getElementById('fit-rows').innerHTML='';
-  (p.fits && p.fits.length ? p.fits : [null]).forEach(f=>addFitRow(f));
+  ((p.fits&&p.fits.length)?p.fits:[null]).forEach(f=>addFitRow(f));
   document.getElementById('add-title').textContent = 'Edit part — '+p.name;
   document.getElementById('save-btn').textContent = 'Update part';
   document.getElementById('cancel-edit-btn').style.display='';
@@ -384,22 +469,22 @@ function startEdit(i){
 }
 
 function cancelEdit(){
-  editIndex = null;
-  resetAddForm();
-  document.getElementById('add-title').textContent = 'Add a new part';
-  document.getElementById('save-btn').textContent = 'Save part';
+  editId=null; resetAddForm();
+  document.getElementById('add-title').textContent='Add a new part';
+  document.getElementById('save-btn').textContent='Save part';
   document.getElementById('cancel-edit-btn').style.display='none';
   document.getElementById('add-msg').textContent='';
   showTab('inventory');
 }
 
-function deletePart(i){
-  const p = DB.parts[i]; if(!p) return;
+async function deletePart(id){
+  const p=DB.parts.find(x=>x.id===id); if(!p) return;
   if(!confirm('Delete "'+p.name+' ('+p.pn+')"? This cannot be undone.')) return;
-  DB.parts.splice(i,1); save(); renderInventory();
+  const { error } = await sb.from('parts').delete().eq('id',id);
+  if(error){ alert(error.message); return; }
+  await loadParts(); renderInventory();
 }
 
-function setV(id,val){ document.getElementById(id).value = (val===undefined||val===null)?'':val; }
 function resetAddForm(){
   ['a-pn','a-name','a-cat','a-brand','a-price','a-cost','a-oem','a-bin'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('a-qty').value=0; document.getElementById('a-reorder').value=0;
@@ -407,13 +492,12 @@ function resetAddForm(){
   document.getElementById('fit-rows').innerHTML=''; addFitRow();
 }
 
-function saveePart(){
+async function saveePart(){
   const pn=v('a-pn'), name=v('a-name'), price=parseFloat(v('a-price'));
   const msg=document.getElementById('add-msg');
   if(!pn||!name||isNaN(price)){ msg.style.color='#fca5a5';
     msg.textContent='Part number, name and price are required.'; return; }
-  // duplicate part-number check (ignore the part currently being edited)
-  if(DB.parts.some((p,idx)=>idx!==editIndex && p.pn.toLowerCase()===pn.toLowerCase())){
+  if(DB.parts.some(p=>p.id!==editId && p.pn.toLowerCase()===pn.toLowerCase())){
     msg.style.color='#fca5a5'; msg.textContent='That part number already exists.'; return; }
   const fits=[...document.querySelectorAll('#fit-rows .fitrow')].map(r=>({
     make:r.querySelector('.fr-make').value, model:r.querySelector('.fr-model').value.trim(),
@@ -425,29 +509,21 @@ function saveePart(){
     oem:v('a-oem'),qty:+v('a-qty')||0,reorder:+v('a-reorder')||0,bin:v('a-bin'),
     engineSpecific:v('a-engspec')==='yes', fits };
 
-  if(editIndex!==null){                 // UPDATE existing part
-    DB.parts[editIndex]=record; save();
-    editIndex=null;
+  msg.style.color='#95a1bd'; msg.textContent='Saving…';
+  if(editId!==null){
+    const { error } = await sb.from('parts').update(toRow(record)).eq('id',editId);
+    if(error){ msg.style.color='#fca5a5'; msg.textContent=error.message; return; }
+    editId=null;
     document.getElementById('add-title').textContent='Add a new part';
     document.getElementById('save-btn').textContent='Save part';
     document.getElementById('cancel-edit-btn').style.display='none';
-    resetAddForm();
-    showTab('inventory');
-    return;
+    resetAddForm(); await loadParts(); showTab('inventory'); return;
   }
-
-  DB.parts.push(record); save();        // ADD new part
-  msg.style.color='#86efac'; msg.textContent='✔ Saved "'+name+'". It is now searchable in Find Parts.';
+  const { error } = await sb.from('parts').insert([toRow(record)]);
+  if(error){ msg.style.color='#fca5a5'; msg.textContent=error.message; return; }
+  await loadParts();
+  msg.style.color='#86efac'; msg.textContent='✔ Saved "'+name+'". It is now on every device.';
   resetAddForm();
-}
-function v(id){return document.getElementById(id).value.trim();}
-
-// ------------------------------------------------------------------ INIT
-initFind(); addFitRow();
-
-// ------------------------------------------------------------------ PWA
-if('serviceWorker' in navigator){
-  window.addEventListener('load', ()=> navigator.serviceWorker.register('sw.js').catch(()=>{}));
 }
 </script>
 </body>

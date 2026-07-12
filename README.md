@@ -31,8 +31,12 @@ device (e.g. the office PC) as the master while you build up the list.
 | `schema.sql` | PostgreSQL schema for the future multi-user cloud version |
 | `seed.sql` | Example data proving shared + engine-specific fitments |
 
-## Later: multi-user cloud version
+## Multi-user cloud version (shared across all devices)
 
-When multiple staff/devices need to share the same live data, the included
-`schema.sql` is ready to deploy to a cloud database (e.g. Supabase). Ask and it
-can be migrated.
+The app now supports a **shared cloud backend** so your laptop, phone, and staff
+all see one live inventory, behind a staff login.
+
+- Follow **`SETUP_CLOUD.md`** to connect it (free Supabase project, ~10 min).
+- `supabase/setup.sql` creates the table + security rules + example data.
+- Until the Supabase keys are filled into `app/index.html`, the app shows a
+  "Cloud not configured yet" message on the sign-in screen.
