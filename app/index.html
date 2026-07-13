@@ -151,6 +151,7 @@
       <div class="row"><h2 style="margin:0">All stock</h2>
         <div class="flex" style="justify-content:flex-end">
           <input id="inv-search" placeholder="filter…" style="max-width:180px" oninput="renderInventory()"/>
+          <button class="mini" onclick="loadParts()">🔄 Refresh</button>
           <button class="mini" onclick="exportCSV()">⤓ Export CSV</button>
           <button class="mini" onclick="document.getElementById('import-file').click()">⤒ Import CSV</button>
           <input type="file" id="import-file" accept=".csv,text/csv" style="display:none" onchange="importCSV(event)"/>
@@ -270,7 +271,23 @@ async function enterApp(){
   try{ const { data } = await sb.auth.getUser(); document.getElementById('who').textContent = data?.user?.email || ''; }catch(e){}
   await loadParts();
   showTab('find');
+  subscribeRealtime();
 }
+
+// Keep the shared list live: update automatically when the DB changes,
+// and refresh whenever the app is reopened / brought back to the foreground.
+let realtimeOn=false;
+function subscribeRealtime(){
+  if(!sb || realtimeOn) return;
+  try{
+    sb.channel('parts-changes')
+      .on('postgres_changes', { event:'*', schema:'public', table:'parts' }, ()=>loadParts())
+      .subscribe();
+    realtimeOn=true;
+  }catch(e){/* realtime optional; focus-refresh below still keeps it fresh */}
+}
+document.addEventListener('visibilitychange', ()=>{ if(!document.hidden && sb) loadParts(); });
+window.addEventListener('focus', ()=>{ if(sb) loadParts(); });
 
 async function doLogin(){
   const email=document.getElementById('login-email').value.trim();
@@ -313,7 +330,7 @@ document.getElementById('tabs').addEventListener('click',e=>{
 function showTab(tab){
   document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active', t.dataset.tab===tab));
   ['find','inventory','add'].forEach(t=>document.getElementById('tab-'+t).style.display=(t===tab?'':'none'));
-  if(tab==='inventory')renderInventory();
+  if(tab==='inventory'){ if(sb){ loadParts(); } else { renderInventory(); } }
 }
 
 // ------------------------------------------------------------------ helpers
