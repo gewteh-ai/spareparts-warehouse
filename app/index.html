@@ -149,7 +149,15 @@
     <div id="low-alerts"></div>
     <div class="panel">
       <div class="row"><h2 style="margin:0">All stock</h2>
-        <input id="inv-search" placeholder="filter…" style="max-width:220px" oninput="renderInventory()"/></div>
+        <div class="flex" style="justify-content:flex-end">
+          <input id="inv-search" placeholder="filter…" style="max-width:180px" oninput="renderInventory()"/>
+          <button class="mini" onclick="exportCSV()">⤓ Export CSV</button>
+          <button class="mini" onclick="document.getElementById('import-file').click()">⤒ Import CSV</button>
+          <input type="file" id="import-file" accept=".csv,text/csv" style="display:none" onchange="importCSV(event)"/>
+        </div>
+      </div>
+      <div class="hint">Export sends your part list, prices &amp; stock to a CSV (opens in Excel / imports into SQL Account). Import matches by part number, sets stock to the exact imported figure (no double-counting), and is safe to re-run.</div>
+      <div id="inv-summary" class="hint" style="margin-top:6px"></div>
       <div style="overflow:auto;margin-top:12px">
         <table id="inv-table"></table>
       </div>
@@ -438,6 +446,10 @@ function renderInventory(){
           <button class="mini" onclick="deletePart(${p.id})">🗑</button>
         </td></tr>`;
     }).join('');
+  const totalUnits=DB.parts.reduce((s,p)=>s+(+p.qty||0),0);
+  const totalValue=DB.parts.reduce((s,p)=>s+(+p.qty||0)*(+p.cost||0),0);
+  const sEl=document.getElementById('inv-summary');
+  if(sEl) sEl.innerHTML=`Totals: <b>${DB.parts.length}</b> parts · <b>${totalUnits}</b> units in stock · stock value <b>${RM(totalValue)}</b> (at cost)`;
 }
 async function adjust(id,d){
   const p=DB.parts.find(x=>x.id===id); if(!p) return;
@@ -445,6 +457,81 @@ async function adjust(id,d){
   const { error } = await sb.from('parts').update({qty:newQty, updated_at:new Date().toISOString()}).eq('id',id);
   if(error){ alert(error.message); return; }
   p.qty=newQty; renderInventory();
+}
+
+// ------------------------------------------------------------------ CSV EXPORT / IMPORT (SQL Account bridge)
+function csvEscape(v){ v=(v==null?'':String(v)); return /[",\n\r]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v; }
+function fitsSummary(fits){ return (fits||[]).map(f=>[f.make,f.model,
+  (f.yFrom||f.yTo)?`${f.yFrom||''}-${f.yTo||''}`:'', f.engine, f.trans, f.drive]
+  .filter(Boolean).join(' ')).join(' | '); }
+
+function exportCSV(){
+  const cols=['PartNumber','Name','Brand','Category','Price','Cost','Qty','ReorderPoint','Bin','Dimensions','OEM','EngineSpecific','Fitments'];
+  const lines=[cols.join(',')].concat(DB.parts.map(p=>[
+    p.pn,p.name,p.brand,p.cat,p.price,p.cost,p.qty,p.reorder,p.bin,p.dimensions,p.oem,
+    p.engineSpecific?'Yes':'No', fitsSummary(p.fits)
+  ].map(csvEscape).join(',')));
+  const blob=new Blob(['\ufeff'+lines.join('\r\n')],{type:'text/csv;charset=utf-8;'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+  a.download='parts_export_'+new Date().toISOString().slice(0,10)+'.csv';
+  document.body.appendChild(a); a.click(); a.remove();
+}
+
+function parseCSV(text){
+  const rows=[]; let field='', row=[], inQ=false;
+  text=text.replace(/\r\n/g,'\n').replace(/\r/g,'\n');
+  for(let i=0;i<text.length;i++){ const c=text[i];
+    if(inQ){ if(c==='"'){ if(text[i+1]==='"'){field+='"';i++;} else inQ=false; } else field+=c; }
+    else { if(c==='"')inQ=true; else if(c===','){row.push(field);field='';}
+      else if(c==='\n'){row.push(field);rows.push(row);row=[];field='';} else field+=c; }
+  }
+  if(field.length||row.length){ row.push(field); rows.push(row); }
+  return rows.filter(r=>!(r.length===1&&r[0].trim()===''));
+}
+function pickCol(headers,names){ for(const n of names){ const i=headers.findIndex(h=>h.trim().toLowerCase()===n); if(i>=0) return i; } return -1; }
+
+async function importCSV(ev){
+  const file=ev.target.files[0]; if(!file) return;
+  const text=await file.text();
+  const rows=parseCSV(text);
+  ev.target.value='';
+  if(rows.length<2){ alert('No data rows found in that CSV.'); return; }
+  const H=rows[0].map(h=>h.trim());
+  const iPn=pickCol(H,['partnumber','part number','code','pn','sku','item code','stock code']);
+  const iName=pickCol(H,['name','description','desc','item name','stock name']);
+  const iBrand=pickCol(H,['brand']);
+  const iCat=pickCol(H,['category','cat','group']);
+  const iPrice=pickCol(H,['price','unitprice','unit price','selling price','sales price']);
+  const iCost=pickCol(H,['cost','unit cost','purchase price']);
+  const iQty=pickCol(H,['qty','quantity','stock','balance','stock qty','qty on hand','on hand']);
+  const iReorder=pickCol(H,['reorderpoint','reorder point','reorder','min','min qty']);
+  const iBin=pickCol(H,['bin','shelf','location','rack']);
+  const iDim=pickCol(H,['dimensions','dimension','size','specs']);
+  const iOem=pickCol(H,['oem','crossref','cross ref','ref no','oem no']);
+  if(iPn<0){ alert('For accurate matching, the CSV must have a Part Number / Code column. Add one and try again.'); return; }
+
+  let added=0, updated=0, skipped=0, failed=0;
+  const g=(row,i)=> (i>=0 && i<row.length)? row[i].trim() : '';
+  for(let r=1;r<rows.length;r++){
+    const row=rows[r]; const pn=g(row,iPn);
+    if(!pn){ skipped++; continue; }                 // no code -> skip (keeps totals tallying)
+    let name=g(row,iName); if(!name) name=pn;
+    const fields={ name, brand:g(row,iBrand), cat:g(row,iCat),
+      price:parseFloat(g(row,iPrice))||0, cost:parseFloat(g(row,iCost))||0,
+      qty:parseInt(g(row,iQty),10)||0, reorder:parseInt(g(row,iReorder),10)||0,
+      bin:g(row,iBin), dimensions:g(row,iDim), oem:g(row,iOem),
+      updated_at:new Date().toISOString() };
+    const existing=DB.parts.find(p=>p.pn.toLowerCase()===pn.toLowerCase());
+    if(existing){                                   // update in place, keep fitments
+      const { error }=await sb.from('parts').update(fields).eq('id',existing.id);
+      if(error){ failed++; } else { updated++; }
+    } else {                                        // new part
+      const { error }=await sb.from('parts').insert([Object.assign({pn, engine_specific:false, fits:[]}, fields)]);
+      if(error){ failed++; } else { added++; }
+    }
+  }
+  await loadParts(); renderInventory();
+  alert('Import complete.\nAdded: '+added+'\nUpdated: '+updated+'\nSkipped (no part number): '+skipped+(failed?('\nFailed: '+failed):'')+'\n\nCheck the Totals line to reconcile with SQL Account.');
 }
 
 // ------------------------------------------------------------------ ADD/EDIT FORM
