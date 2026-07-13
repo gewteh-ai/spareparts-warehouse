@@ -161,13 +161,13 @@
     <div class="panel">
       <h2 id="add-title">Add a new part</h2>
       <div class="grid g3">
-        <div><label>Part number / SKU *</label><input id="a-pn" placeholder="TRE-555-1001"/></div>
-        <div><label>Part name *</label><input id="a-name" placeholder="Tie Rod End (Outer)"/></div>
+        <div><label>Part number / SKU</label><input id="a-pn" placeholder="TRE-555-1001"/></div>
+        <div><label>Part name</label><input id="a-name" placeholder="Tie Rod End (Outer)"/></div>
         <div><label>Category</label><input id="a-cat" placeholder="Steering"/></div>
       </div>
       <div class="grid g4" style="margin-top:12px">
         <div><label>Brand</label><input id="a-brand" placeholder="555"/></div>
-        <div><label>Selling price (RM) *</label><input id="a-price" type="number" step="0.01" placeholder="85.00"/></div>
+        <div><label>Selling price (RM)</label><input id="a-price" type="number" step="0.01" placeholder="85.00"/></div>
         <div><label>Cost (RM)</label><input id="a-cost" type="number" step="0.01" placeholder="52.00"/></div>
         <div><label>OEM / cross-ref no.</label><input id="a-oem" placeholder="45046-09280"/></div>
       </div>
@@ -500,10 +500,14 @@ function resetAddForm(){
 }
 
 async function saveePart(){
-  const pn=v('a-pn'), name=v('a-name'), price=parseFloat(v('a-price'));
+  let pn=v('a-pn'), name=v('a-name'); let price=parseFloat(v('a-price'));
   const msg=document.getElementById('add-msg');
-  if(!pn||!name||isNaN(price)){ msg.style.color='#fca5a5';
-    msg.textContent='Part number, name and price are required.'; return; }
+  // Only need SOMETHING to identify the part: a name or a part number.
+  if(!pn && !name){ msg.style.color='#fca5a5';
+    msg.textContent='Enter at least a part name or a part number.'; return; }
+  if(!name) name = pn;                       // fall back to pn if no name
+  if(!pn)   pn = 'AUTO-'+Date.now();         // auto-generate a unique number if blank
+  if(isNaN(price)) price = 0;                // price optional -> defaults to 0
   if(DB.parts.some(p=>p.id!==editId && p.pn.toLowerCase()===pn.toLowerCase())){
     msg.style.color='#fca5a5'; msg.textContent='That part number already exists.'; return; }
   const fits=[...document.querySelectorAll('#fit-rows .fitrow')].map(r=>({
