@@ -125,10 +125,10 @@
     <div class="panel">
       <h2>Find parts for a customer's vehicle</h2>
       <div class="grid g4">
-        <div><label>Make</label><select id="f-make"></select></div>
-        <div><label>Model</label><select id="f-model"></select></div>
+        <div><label>Make</label><input id="f-make" list="dl-makes" placeholder="Any (type or pick)"/></div>
+        <div><label>Model</label><input id="f-model" list="dl-models" placeholder="Any (type or pick)"/></div>
         <div><label>Year</label><select id="f-year"></select></div>
-        <div><label>Engine</label><select id="f-engine"></select></div>
+        <div><label>Engine</label><input id="f-engine" list="dl-engines" placeholder="Any (type or pick)"/></div>
       </div>
       <div class="grid g4" style="margin-top:12px">
         <div><label>Transmission</label><select id="f-trans"></select></div>
@@ -197,6 +197,10 @@
     </div>
   </section>
 </main>
+<!-- Shared suggestion lists (you can also type any value not listed) -->
+<datalist id="dl-makes"></datalist>
+<datalist id="dl-models"></datalist>
+<datalist id="dl-engines"></datalist>
 </div><!-- /#app -->
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -288,6 +292,7 @@ async function loadParts(){
   const { data, error } = await sb.from('parts').select('*').order('name');
   if(error){ alert('Could not load parts: '+error.message); return; }
   DB.parts = (data||[]).map(fromRow);
+  refreshDatalists();
   const active=document.querySelector('.tab.active');
   if(active && active.dataset.tab==='inventory') renderInventory();
 }
@@ -313,28 +318,40 @@ function setV(id,val){ document.getElementById(id).value = (val===undefined||val
 
 // ------------------------------------------------------------------ FIND
 function initFind(){
-  document.getElementById('f-make').innerHTML = opt(OPTIONS.makes,'Any');
   document.getElementById('f-year').innerHTML = opt(range(1998,2026).reverse().map(String),'Any');
-  document.getElementById('f-engine').innerHTML = opt(OPTIONS.engines,'Any');
   document.getElementById('f-trans').innerHTML = opt(OPTIONS.transmissions,'Any');
   document.getElementById('f-drive').innerHTML = opt(OPTIONS.drivetrains,'Any');
-  document.getElementById('f-model').innerHTML = opt([],'Any');
-  document.getElementById('f-make').onchange = ()=>{
-    const m=document.getElementById('f-make').value;
-    document.getElementById('f-model').innerHTML = opt(m?(OPTIONS.models[m]||[]):[],'Any');
-  };
+  ['f-make','f-model','f-engine'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
+  refreshDatalists();
 }
+
+// Suggestion lists = built-in options PLUS anything already used in your data,
+// so a make/model/engine you typed once shows up as a suggestion next time.
+function refreshDatalists(){
+  const makes=new Set(OPTIONS.makes), models=new Set(), engines=new Set(OPTIONS.engines);
+  Object.values(OPTIONS.models).forEach(a=>a.forEach(m=>models.add(m)));
+  (DB.parts||[]).forEach(p=>(p.fits||[]).forEach(f=>{
+    if(f.make) makes.add(f.make);
+    if(f.model) models.add(f.model);
+    if(f.engine) engines.add(f.engine);
+  }));
+  const esc=s=>String(s).replace(/"/g,'&quot;');
+  const fill=(id,set)=>{ const el=document.getElementById(id);
+    if(el) el.innerHTML=[...set].sort().map(x=>`<option value="${esc(x)}"></option>`).join(''); };
+  fill('dl-makes',makes); fill('dl-models',models); fill('dl-engines',engines);
+}
+function eqi(a,b){ return String(a||'').trim().toLowerCase()===String(b||'').trim().toLowerCase(); }
 function range(a,b){const r=[];for(let i=a;i<=b;i++)r.push(i);return r;}
 function clearFind(){ initFind(); document.getElementById('f-search').value='';
   document.getElementById('find-results').innerHTML=''; }
 
 function fitMatches(f,sel){
-  if(sel.make && f.make!==sel.make) return false;
-  if(sel.model && f.model!==sel.model) return false;
+  if(sel.make && !eqi(f.make,sel.make)) return false;
+  if(sel.model && !eqi(f.model,sel.model)) return false;
   if(sel.year){ const y=+sel.year; if(f.yFrom&&y<f.yFrom)return false; if(f.yTo&&y>f.yTo)return false; }
-  if(sel.engine && f.engine && f.engine!==sel.engine) return false;
-  if(sel.trans && f.trans && f.trans!==sel.trans) return false;
-  if(sel.drive && f.drive && f.drive!==sel.drive) return false;
+  if(sel.engine && f.engine && !eqi(f.engine,sel.engine)) return false;
+  if(sel.trans && f.trans && !eqi(f.trans,sel.trans)) return false;
+  if(sel.drive && f.drive && !eqi(f.drive,sel.drive)) return false;
   return true;
 }
 
@@ -433,11 +450,11 @@ async function adjust(id,d){
 // ------------------------------------------------------------------ ADD/EDIT FORM
 function fitRowHTML(){
   return `<div class="fitrow">
-    <div><label>Make</label><select class="fr-make">${opt(OPTIONS.makes,'—')}</select></div>
-    <div><label>Model</label><input class="fr-model" placeholder="Hilux"/></div>
+    <div><label>Make</label><input class="fr-make" list="dl-makes" placeholder="e.g. Toyota"/></div>
+    <div><label>Model</label><input class="fr-model" list="dl-models" placeholder="e.g. Hilux"/></div>
     <div><label>Year from</label><input class="fr-yfrom" type="number" placeholder="2005"/></div>
     <div><label>Year to</label><input class="fr-yto" type="number" placeholder="2015"/></div>
-    <div><label>Engine</label><select class="fr-engine">${opt(OPTIONS.engines,'Any')}</select></div>
+    <div><label>Engine</label><input class="fr-engine" list="dl-engines" placeholder="Any"/></div>
     <div><label>Trans</label><select class="fr-trans">${opt(OPTIONS.transmissions,'Any')}</select></div>
     <div><label>Drive</label><select class="fr-drive">${opt(OPTIONS.drivetrains,'Any')}</select></div>
     <button class="mini" onclick="this.parentElement.remove()" style="height:37px">✕</button>
