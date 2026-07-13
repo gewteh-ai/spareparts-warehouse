@@ -179,6 +179,10 @@
           <select id="a-engspec"><option value="no">No — fits any engine</option>
           <option value="yes">Yes — must match engine</option></select></div>
       </div>
+      <div style="margin-top:12px">
+        <label>Dimensions / specs (optional — for accuracy on sized parts)</label>
+        <input id="a-dim" placeholder="e.g. Length 320mm · OD 45mm · Thread M12x1.25"/>
+      </div>
 
       <h2 style="margin:20px 0 8px">Compatible vehicles (add as many as needed)</h2>
       <div class="hint">Leave a factor as "Any" if it doesn't affect fitment. Engine-specific parts (starters, ECUs) should set the engine.</div>
@@ -273,11 +277,12 @@ function fromRow(r){ return {
   id:r.id, pn:r.pn, name:r.name, cat:r.cat, brand:r.brand,
   price:+r.price||0, cost:+r.cost||0, oem:r.oem, qty:+r.qty||0,
   reorder:+r.reorder||0, bin:r.bin, engineSpecific:!!r.engine_specific,
-  fits: Array.isArray(r.fits)?r.fits:[] }; }
+  dimensions:r.dimensions||'', fits: Array.isArray(r.fits)?r.fits:[] }; }
 function toRow(p){ return {
   pn:p.pn, name:p.name, cat:p.cat, brand:p.brand, price:p.price, cost:p.cost,
   oem:p.oem, qty:p.qty, reorder:p.reorder, bin:p.bin,
-  engine_specific:p.engineSpecific, fits:p.fits, updated_at:new Date().toISOString() }; }
+  engine_specific:p.engineSpecific, dimensions:p.dimensions, fits:p.fits,
+  updated_at:new Date().toISOString() }; }
 
 async function loadParts(){
   const { data, error } = await sb.from('parts').select('*').order('name');
@@ -379,6 +384,7 @@ function partCard(p, groupName){
         <div class="pname">${p.name} <span class="muted">— ${p.brand||''}</span>
           ${p.engineSpecific?'<span class="badge eng">ENGINE-SPECIFIC</span>':''}</div>
         <div class="pn">${p.pn}${p.oem?(' · OEM '+p.oem):''}</div>
+        ${p.dimensions?`<div class="pn">📏 ${p.dimensions}</div>`:''}
       </div>
       <div style="text-align:right">
         <div class="price">${RM(p.price)}</div>
@@ -457,6 +463,7 @@ function startEdit(id){
   setV('a-pn',p.pn); setV('a-name',p.name); setV('a-cat',p.cat);
   setV('a-brand',p.brand); setV('a-price',p.price); setV('a-cost',p.cost);
   setV('a-oem',p.oem); setV('a-qty',p.qty); setV('a-reorder',p.reorder); setV('a-bin',p.bin);
+  setV('a-dim',p.dimensions);
   document.getElementById('a-engspec').value = p.engineSpecific ? 'yes' : 'no';
   document.getElementById('fit-rows').innerHTML='';
   ((p.fits&&p.fits.length)?p.fits:[null]).forEach(f=>addFitRow(f));
@@ -486,7 +493,7 @@ async function deletePart(id){
 }
 
 function resetAddForm(){
-  ['a-pn','a-name','a-cat','a-brand','a-price','a-cost','a-oem','a-bin'].forEach(id=>document.getElementById(id).value='');
+  ['a-pn','a-name','a-cat','a-brand','a-price','a-cost','a-oem','a-bin','a-dim'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('a-qty').value=0; document.getElementById('a-reorder').value=0;
   document.getElementById('a-engspec').value='no';
   document.getElementById('fit-rows').innerHTML=''; addFitRow();
@@ -507,7 +514,7 @@ async function saveePart(){
   })).filter(f=>f.make&&f.model);
   const record={ pn,name,cat:v('a-cat'),brand:v('a-brand'),price,cost:parseFloat(v('a-cost'))||0,
     oem:v('a-oem'),qty:+v('a-qty')||0,reorder:+v('a-reorder')||0,bin:v('a-bin'),
-    engineSpecific:v('a-engspec')==='yes', fits };
+    dimensions:v('a-dim'), engineSpecific:v('a-engspec')==='yes', fits };
 
   msg.style.color='#95a1bd'; msg.textContent='Saving…';
   if(editId!==null){

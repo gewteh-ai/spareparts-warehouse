@@ -18,6 +18,7 @@ create table if not exists public.parts (
   reorder         int default 0,                  -- low-stock threshold
   bin             text,
   engine_specific boolean default false,
+  dimensions      text,                           -- optional size/spec note (e.g. length, OD, thread)
   fits            jsonb default '[]'::jsonb,      -- [{make,model,yFrom,yTo,engine,trans,drive}]
   updated_at      timestamptz default now()
 );
