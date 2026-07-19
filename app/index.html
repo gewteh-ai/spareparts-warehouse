@@ -146,6 +146,7 @@
 
   <!-- INVENTORY -->
   <section id="tab-inventory" style="display:none">
+    <div id="diag" class="warnbox" style="display:none"></div>
     <div id="low-alerts"></div>
     <div class="panel">
       <div class="row"><h2 style="margin:0">All stock</h2>
@@ -315,8 +316,24 @@ function toRow(p){ return {
 
 async function loadParts(){
   const { data, error } = await sb.from('parts').select('*').order('name');
-  if(error){ alert('Could not load parts: '+error.message); return; }
-  DB.parts = (data||[]).map(fromRow);
+  const diag=document.getElementById('diag');
+  const email=(document.getElementById('who')||{}).textContent||'(unknown)';
+  if(error){
+    DB.parts=[];
+    if(diag){ diag.style.display='';
+      diag.innerHTML=`⚠️ Read error: ${error.message}<br>Signed in as <b>${email}</b>.`; }
+  } else {
+    DB.parts=(data||[]).map(fromRow);
+    if(diag){
+      if(DB.parts.length===0){
+        diag.style.display='';
+        diag.innerHTML=`Connected &amp; signed in as <b>${email}</b>, but the database returned <b>0 parts</b>.<br>`+
+          `This means either the read policy is not applied in <b>this</b> project, or the setup SQL was run in a different Supabase project than the app uses (URL: ollorutmxfetvmjblrcn.supabase.co).`;
+      } else {
+        diag.style.display='none';
+      }
+    }
+  }
   refreshDatalists();
   const active=document.querySelector('.tab.active');
   if(active && active.dataset.tab==='inventory') renderInventory();
