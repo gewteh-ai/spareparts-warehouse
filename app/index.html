@@ -315,20 +315,28 @@ function toRow(p){ return {
   updated_at:new Date().toISOString() }; }
 
 async function loadParts(){
+  let roleInfo='';
+  try{
+    const { data:{ session } } = await sb.auth.getSession();
+    if(session && session.access_token){
+      const payload=JSON.parse(atob(session.access_token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));
+      roleInfo='token role = '+(payload.role||'?');
+    } else { roleInfo='NO active session (requests are anonymous)'; }
+  }catch(e){ roleInfo='session check failed'; }
   const { data, error } = await sb.from('parts').select('*').order('name');
   const diag=document.getElementById('diag');
   const email=(document.getElementById('who')||{}).textContent||'(unknown)';
   if(error){
     DB.parts=[];
     if(diag){ diag.style.display='';
-      diag.innerHTML=`⚠️ Read error: ${error.message}<br>Signed in as <b>${email}</b>.`; }
+      diag.innerHTML=`⚠️ Read error: ${error.message}<br>${roleInfo}`; }
   } else {
     DB.parts=(data||[]).map(fromRow);
     if(diag){
       if(DB.parts.length===0){
         diag.style.display='';
-        diag.innerHTML=`Connected &amp; signed in as <b>${email}</b>, but the database returned <b>0 parts</b>.<br>`+
-          `This means either the read policy is not applied in <b>this</b> project, or the setup SQL was run in a different Supabase project than the app uses (URL: ollorutmxfetvmjblrcn.supabase.co).`;
+        diag.innerHTML=`Signed in as <b>${email}</b> · <b>${roleInfo}</b> · database returned <b>0 parts</b>.<br>`+
+          `If parts exist in Supabase but this says 0, the read policy isn't active in the project the app uses (ollorutmxfetvmjblrcn), or the data is in a different project.`;
       } else {
         diag.style.display='none';
       }
