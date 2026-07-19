@@ -1,6 +1,7 @@
-// Service worker — installable + offline, but always picks up new app versions.
-// Bump CACHE whenever the app changes so old copies are cleared.
-const CACHE = 'spwh-v3';
+// Service worker — installable + offline for the APP SHELL only.
+// IMPORTANT: it must NEVER cache Supabase/API responses, or saved data won't
+// show up. We only ever touch same-origin static files here.
+const CACHE = 'spwh-v4';
 const ASSETS = [
   './',
   './index.html',
@@ -15,36 +16,27 @@ self.addEventListener('install', e => {
 });
 
 self.addEventListener('activate', e => {
+  // Wipe ALL old caches (including any stale cached API responses from earlier versions).
   e.waitUntil(
-    caches.keys().then(keys => Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k))))
+    caches.keys().then(keys => Promise.all(keys.map(k => caches.delete(k))))
+      .then(() => caches.open(CACHE).then(c => c.addAll(ASSETS)))
       .then(() => self.clients.claim())
   );
 });
 
-// NETWORK-FIRST for the page/app code (so new versions always load when online),
-// falling back to cache when offline. Static icons stay cache-first.
 self.addEventListener('fetch', e => {
-  if (e.request.method !== 'GET') return;
-  const req = e.request;
-  const isPage = req.mode === 'navigate' ||
-                 req.destination === 'document' ||
-                 /\.(html|js|json)$/.test(new URL(req.url).pathname);
+  const url = new URL(e.request.url);
+  // Only handle GET requests to OUR OWN origin (the app files).
+  // Cross-origin requests (Supabase database/auth) go straight to the network,
+  // never cached — so your data is always live.
+  if (e.request.method !== 'GET' || url.origin !== self.location.origin) return;
 
-  if (isPage) {
-    e.respondWith(
-      fetch(req).then(resp => {
-        const copy = resp.clone();
-        caches.open(CACHE).then(c => c.put(req, copy)).catch(() => {});
-        return resp;
-      }).catch(() => caches.match(req).then(hit => hit || caches.match('./index.html')))
-    );
-  } else {
-    e.respondWith(
-      caches.match(req).then(hit => hit || fetch(req).then(resp => {
-        const copy = resp.clone();
-        caches.open(CACHE).then(c => c.put(req, copy)).catch(() => {});
-        return resp;
-      }))
-    );
-  }
+  // Network-first for app files so updates always load; fall back to cache offline.
+  e.respondWith(
+    fetch(e.request).then(resp => {
+      const copy = resp.clone();
+      caches.open(CACHE).then(c => c.put(e.request, copy)).catch(() => {});
+      return resp;
+    }).catch(() => caches.match(e.request).then(hit => hit || caches.match('./index.html')))
+  );
 });
