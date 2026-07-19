@@ -246,7 +246,16 @@ function cloudConfigured(){
 
 window.addEventListener('load', boot);
 async function boot(){
-  if('serviceWorker' in navigator){ navigator.serviceWorker.register('sw.js').catch(()=>{}); }
+  // Remove any old service worker + caches. Earlier versions cached the
+  // database responses, which hid newly-saved parts. The app now always loads
+  // live data (it needs the internet for the shared cloud database anyway).
+  try{
+    if('serviceWorker' in navigator){
+      const regs=await navigator.serviceWorker.getRegistrations();
+      for(const r of regs){ await r.unregister(); }
+    }
+    if(window.caches){ const ks=await caches.keys(); for(const k of ks){ await caches.delete(k); } }
+  }catch(e){}
   initFind(); addFitRow();
 
   if(!cloudConfigured()){
