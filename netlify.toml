@@ -1,0 +1,7 @@
+# Netlify build config
+[build]
+  publish = "app"                     # the app (index.html) is served from /app
+  functions = "netlify/functions"     # serverless functions live here
+
+[functions]
+  node_bundler = "esbuild"

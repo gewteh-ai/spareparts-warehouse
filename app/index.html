@@ -170,6 +170,14 @@
   <section id="tab-add" style="display:none">
     <div class="panel">
       <h2 id="add-title">Add a new part</h2>
+      <div class="card" style="margin-bottom:14px">
+        <div class="flex">
+          <button class="btn" onclick="document.getElementById('ai-photo').click()">📷 Scan part photo (AI fills the form)</button>
+          <input type="file" id="ai-photo" accept="image/*" capture="environment" style="display:none" onchange="scanPart(event)"/>
+          <span id="ai-status" class="hint"></span>
+        </div>
+        <div class="hint">Snap the part or its box (labels facing the camera). The AI fills what it can — always check and correct before saving.</div>
+      </div>
       <div class="grid g3">
         <div><label>Part number / SKU</label><input id="a-pn" placeholder="TRE-555-1001"/></div>
         <div><label>Part name</label><input id="a-name" placeholder="Tie Rod End (Outer)"/></div>
@@ -652,6 +660,46 @@ function resetAddForm(){
   document.getElementById('a-qty').value=0; document.getElementById('a-reorder').value=0;
   document.getElementById('a-engspec').value='no';
   document.getElementById('fit-rows').innerHTML=''; addFitRow();
+}
+
+// ------------------------------------------------------------------ AI PHOTO SCAN
+async function scanPart(ev){
+  const file=ev.target.files[0]; ev.target.value=''; if(!file) return;
+  const status=document.getElementById('ai-status');
+  status.style.color='#95a1bd'; status.textContent='Analyzing photo…';
+  try{
+    const image=await downscaleToBase64(file, 1024, 0.7);
+    const resp=await fetch('/.netlify/functions/identify-part', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({ image, mime:'image/jpeg' })
+    });
+    const out=await resp.json().catch(()=>({}));
+    if(!resp.ok || out.error){ status.style.color='#fca5a5';
+      status.textContent='AI error: '+(out.error||('HTTP '+resp.status)); return; }
+    const r=out.result||{};
+    const setIf=(id,val)=>{ if(val && String(val).trim()) document.getElementById(id).value=val; };
+    setIf('a-name',r.name); setIf('a-brand',r.brand); setIf('a-cat',r.category);
+    setIf('a-pn',r.part_number); setIf('a-oem',r.oem); setIf('a-dim',r.dimensions);
+    if(r.engine_specific===true) document.getElementById('a-engspec').value='yes';
+    status.style.color='#86efac';
+    status.textContent='✔ Filled from photo — please review/edit, then Save.';
+  }catch(e){ status.style.color='#fca5a5'; status.textContent='Could not analyze photo: '+e.message; }
+}
+// Shrink the image in the browser before sending (faster + stays within limits).
+function downscaleToBase64(file, maxDim, quality){
+  return new Promise((resolve,reject)=>{
+    const img=new Image(); const url=URL.createObjectURL(file);
+    img.onload=()=>{
+      const scale=Math.min(1, maxDim/Math.max(img.width,img.height));
+      const w=Math.round(img.width*scale), h=Math.round(img.height*scale);
+      const c=document.createElement('canvas'); c.width=w; c.height=h;
+      c.getContext('2d').drawImage(img,0,0,w,h);
+      URL.revokeObjectURL(url);
+      resolve(c.toDataURL('image/jpeg', quality).split(',')[1]);
+    };
+    img.onerror=()=>{ URL.revokeObjectURL(url); reject(new Error('bad image')); };
+    img.src=url;
+  });
 }
 
 async function saveePart(){
