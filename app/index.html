@@ -139,8 +139,11 @@
       <div class="flex" style="margin-top:12px">
         <button class="btn" onclick="runFind()">Show matching parts</button>
         <button class="btn ghost" onclick="clearFind()">Reset</button>
-        <button class="btn" onclick="document.getElementById('find-photo-cam').click()">📷 Identify by photo</button>
-        <button class="btn ghost" onclick="document.getElementById('find-photo-lib').click()">🖼️ From gallery</button>
+        <button class="btn" onclick="document.getElementById('ocr-find-cam').click()">📷 Scan to find (free)</button>
+        <button class="btn ghost" onclick="document.getElementById('ocr-find-lib').click()">🖼️ From gallery (free)</button>
+        <input type="file" id="ocr-find-cam" accept="image/*" capture="environment" style="display:none" onchange="ocrFind(event)"/>
+        <input type="file" id="ocr-find-lib" accept="image/*" style="display:none" onchange="ocrFind(event)"/>
+        <button class="mini" onclick="document.getElementById('find-photo-lib').click()">✨ AI (needs credits)</button>
         <input type="file" id="find-photo-cam" accept="image/*" capture="environment" style="display:none" onchange="scanFind(event)"/>
         <input type="file" id="find-photo-lib" accept="image/*" style="display:none" onchange="scanFind(event)"/>
       </div>
@@ -176,14 +179,22 @@
     <div class="panel">
       <h2 id="add-title">Add a new part</h2>
       <div class="card" style="margin-bottom:14px">
+        <div class="hint" style="margin-bottom:6px"><b>📷 Scan a part to auto-fill — free &amp; unlimited</b></div>
         <div class="flex">
-          <button class="btn" onclick="document.getElementById('ai-photo-cam').click()">📷 Take photo</button>
-          <button class="btn ghost" onclick="document.getElementById('ai-photo-lib').click()">🖼️ Choose from gallery</button>
-          <input type="file" id="ai-photo-cam" accept="image/*" capture="environment" style="display:none" onchange="scanPart(event)"/>
-          <input type="file" id="ai-photo-lib" accept="image/*" style="display:none" onchange="scanPart(event)"/>
+          <button class="btn" onclick="document.getElementById('ocr-add-cam').click()">Take photo</button>
+          <button class="btn ghost" onclick="document.getElementById('ocr-add-lib').click()">Choose from gallery</button>
+          <input type="file" id="ocr-add-cam" accept="image/*" capture="environment" style="display:none" onchange="ocrAdd(event)"/>
+          <input type="file" id="ocr-add-lib" accept="image/*" style="display:none" onchange="ocrAdd(event)"/>
           <span id="ai-status" class="hint"></span>
         </div>
-        <div class="hint">Take a photo or pick one from your gallery (labels facing the camera). The AI fills what it can — always check and correct before saving.</div>
+        <div class="hint" style="margin-top:6px">Reads printed text (part number, brand) off the box — no cost, works on phone &amp; laptop. First scan downloads a small reader (~a few MB), then it's quick. Always check before saving.</div>
+        <details style="margin-top:8px"><summary class="hint" style="cursor:pointer">Show text the scanner read</summary>
+          <pre id="ocr-add-text" style="white-space:pre-wrap;font-size:12px;color:var(--muted);margin:6px 0 0;max-height:150px;overflow:auto"></pre></details>
+        <div class="flex" style="margin-top:10px">
+          <button class="mini" onclick="document.getElementById('ai-photo-lib').click()">✨ Use smart AI instead (needs Google credits)</button>
+          <input type="file" id="ai-photo-cam" accept="image/*" capture="environment" style="display:none" onchange="scanPart(event)"/>
+          <input type="file" id="ai-photo-lib" accept="image/*" style="display:none" onchange="scanPart(event)"/>
+        </div>
       </div>
       <div class="grid g3">
         <div><label>Part number / SKU</label><input id="a-pn" placeholder="TRE-555-1001"/></div>
@@ -228,6 +239,7 @@
 <datalist id="dl-engines"></datalist>
 </div><!-- /#app -->
 
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
 // ==================================================================
@@ -740,6 +752,54 @@ function downscaleToBase64(file, maxDim, quality){
     img.onerror=()=>{ URL.revokeObjectURL(url); reject(new Error('bad image')); };
     img.src=url;
   });
+}
+
+// ------------------------------------------------------------------ FREE OCR (no cost, unlimited, in-browser)
+async function runOCR(file, onProgress){
+  if(typeof Tesseract==='undefined') throw new Error('text reader not loaded — check your internet and reload.');
+  const { data } = await Tesseract.recognize(file, 'eng', {
+    logger: m => { if(m.status==='recognizing text' && onProgress) onProgress(Math.round((m.progress||0)*100)); }
+  });
+  return (data && data.text) ? data.text : '';
+}
+// Pull likely part-number / code tokens out of the read text.
+function extractCodes(text){
+  const tokens = (text.toUpperCase().match(/[A-Z0-9][A-Z0-9\-\/\.]{3,}/g) || []);
+  return [...new Set(tokens.filter(t => /[0-9]/.test(t) && t.length>=5))].sort((a,b)=>b.length-a.length);
+}
+// Add Part: read the box, fill likely codes, show the full text for manual pick.
+async function ocrAdd(ev){
+  const file=ev.target.files[0]; ev.target.value=''; if(!file) return;
+  const status=document.getElementById('ai-status');
+  status.style.color='#95a1bd'; status.textContent='Reading text… 0%';
+  try{
+    const text=await runOCR(file, p=>{ status.textContent='Reading text… '+p+'%'; });
+    const codes=extractCodes(text);
+    const pnEl=document.getElementById('a-pn'), oemEl=document.getElementById('a-oem');
+    if(codes[0] && !pnEl.value.trim()) pnEl.value=codes[0];
+    if(codes[1] && !oemEl.value.trim()) oemEl.value=codes[1];
+    const pre=document.getElementById('ocr-add-text'); if(pre) pre.textContent=(text.trim()||'(no text found)');
+    status.style.color='#86efac';
+    status.textContent = codes.length
+      ? '✔ Read the label — filled likely code(s). Check them and fill name/brand from the text below, then Save.'
+      : '✔ Photo read, but no clear part number found. See the text below and fill the fields.';
+  }catch(e){ status.style.color='#fca5a5'; status.textContent='Could not read the photo: '+e.message; }
+}
+// Find Parts: read a customer's part and search inventory for the code.
+async function ocrFind(ev){
+  const file=ev.target.files[0]; ev.target.value=''; if(!file) return;
+  const status=document.getElementById('find-scan-status');
+  status.style.color='#95a1bd'; status.textContent='Reading text… 0%';
+  try{
+    const text=await runOCR(file, p=>{ status.textContent='Reading text… '+p+'%'; });
+    const codes=extractCodes(text);
+    if(!codes.length){ status.style.color='#fca5a5';
+      status.textContent='No part number detected — try a clearer photo of the printed label.'; return; }
+    document.getElementById('f-search').value=codes[0];
+    runFind();
+    status.style.color='#86efac';
+    status.textContent='Detected “'+codes[0]+'” — showing matches.'+(codes.length>1?(' Other codes read: '+codes.slice(1,4).join(', ')):'');
+  }catch(e){ status.style.color='#fca5a5'; status.textContent='Could not read the photo: '+e.message; }
 }
 
 async function saveePart(){
