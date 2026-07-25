@@ -139,7 +139,12 @@
       <div class="flex" style="margin-top:12px">
         <button class="btn" onclick="runFind()">Show matching parts</button>
         <button class="btn ghost" onclick="clearFind()">Reset</button>
+        <button class="btn" onclick="document.getElementById('find-photo-cam').click()">📷 Identify by photo</button>
+        <button class="btn ghost" onclick="document.getElementById('find-photo-lib').click()">🖼️ From gallery</button>
+        <input type="file" id="find-photo-cam" accept="image/*" capture="environment" style="display:none" onchange="scanFind(event)"/>
+        <input type="file" id="find-photo-lib" accept="image/*" style="display:none" onchange="scanFind(event)"/>
       </div>
+      <div id="find-scan-status" class="hint" style="margin-top:8px"></div>
     </div>
     <div id="find-results"></div>
   </section>
@@ -172,11 +177,13 @@
       <h2 id="add-title">Add a new part</h2>
       <div class="card" style="margin-bottom:14px">
         <div class="flex">
-          <button class="btn" onclick="document.getElementById('ai-photo').click()">📷 Scan part photo (AI fills the form)</button>
-          <input type="file" id="ai-photo" accept="image/*" capture="environment" style="display:none" onchange="scanPart(event)"/>
+          <button class="btn" onclick="document.getElementById('ai-photo-cam').click()">📷 Take photo</button>
+          <button class="btn ghost" onclick="document.getElementById('ai-photo-lib').click()">🖼️ Choose from gallery</button>
+          <input type="file" id="ai-photo-cam" accept="image/*" capture="environment" style="display:none" onchange="scanPart(event)"/>
+          <input type="file" id="ai-photo-lib" accept="image/*" style="display:none" onchange="scanPart(event)"/>
           <span id="ai-status" class="hint"></span>
         </div>
-        <div class="hint">Snap the part or its box (labels facing the camera). The AI fills what it can — always check and correct before saving.</div>
+        <div class="hint">Take a photo or pick one from your gallery (labels facing the camera). The AI fills what it can — always check and correct before saving.</div>
       </div>
       <div class="grid g3">
         <div><label>Part number / SKU</label><input id="a-pn" placeholder="TRE-555-1001"/></div>
@@ -663,26 +670,59 @@ function resetAddForm(){
 }
 
 // ------------------------------------------------------------------ AI PHOTO SCAN
+// Shared: send a photo to the AI function and return the extracted fields.
+async function aiIdentify(file){
+  const image=await downscaleToBase64(file, 1024, 0.7);
+  const resp=await fetch('/.netlify/functions/identify-part', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({ image, mime:'image/jpeg' })
+  });
+  const out=await resp.json().catch(()=>({}));
+  if(!resp.ok || out.error) throw new Error(out.error || ('HTTP '+resp.status));
+  return out.result||{};
+}
+
+// Add Part: fill the form (and compatible vehicles) from a photo.
 async function scanPart(ev){
   const file=ev.target.files[0]; ev.target.value=''; if(!file) return;
   const status=document.getElementById('ai-status');
   status.style.color='#95a1bd'; status.textContent='Analyzing photo…';
   try{
-    const image=await downscaleToBase64(file, 1024, 0.7);
-    const resp=await fetch('/.netlify/functions/identify-part', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({ image, mime:'image/jpeg' })
-    });
-    const out=await resp.json().catch(()=>({}));
-    if(!resp.ok || out.error){ status.style.color='#fca5a5';
-      status.textContent='AI error: '+(out.error||('HTTP '+resp.status)); return; }
-    const r=out.result||{};
+    const r=await aiIdentify(file);
     const setIf=(id,val)=>{ if(val && String(val).trim()) document.getElementById(id).value=val; };
     setIf('a-name',r.name); setIf('a-brand',r.brand); setIf('a-cat',r.category);
     setIf('a-pn',r.part_number); setIf('a-oem',r.oem); setIf('a-dim',r.dimensions);
     if(r.engine_specific===true) document.getElementById('a-engspec').value='yes';
+    // compatible vehicles read from the box (if any)
+    const fits=Array.isArray(r.fitments)?r.fitments:[];
+    if(fits.length){
+      document.getElementById('fit-rows').innerHTML='';
+      fits.forEach(f=>addFitRow({
+        make:f.make||'', model:f.model||'',
+        yFrom:f.year_from||f.yFrom||'', yTo:f.year_to||f.yTo||'',
+        engine:f.engine||'', trans:f.trans||'', drive:f.drive||''
+      }));
+    }
     status.style.color='#86efac';
-    status.textContent='✔ Filled from photo — please review/edit, then Save.';
+    status.textContent='✔ Filled from photo'+(fits.length?(' incl. '+fits.length+' vehicle(s)'):'')+' — review/edit, then Save.';
+  }catch(e){ status.style.color='#fca5a5'; status.textContent='Could not analyze photo: '+e.message; }
+}
+
+// Find Parts: identify a part a customer brought in, then search inventory for it.
+async function scanFind(ev){
+  const file=ev.target.files[0]; ev.target.value=''; if(!file) return;
+  const status=document.getElementById('find-scan-status');
+  status.style.color='#95a1bd'; status.textContent='Reading the part…';
+  try{
+    const r=await aiIdentify(file);
+    const token=(r.part_number||r.oem||r.name||'').trim();
+    const read=[r.name,r.brand,r.part_number,r.oem].filter(Boolean).join(' · ');
+    if(!token){ status.style.color='#fca5a5';
+      status.textContent='Could not read anything identifiable — try a clearer photo of the label.'; return; }
+    document.getElementById('f-search').value=token;
+    runFind();
+    status.style.color='#86efac';
+    status.textContent='AI read: '+read+' — showing matches for “'+token+'”. Adjust the search if needed.';
   }catch(e){ status.style.color='#fca5a5'; status.textContent='Could not analyze photo: '+e.message; }
 }
 // Shrink the image in the browser before sending (faster + stays within limits).

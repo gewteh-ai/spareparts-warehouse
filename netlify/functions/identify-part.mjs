@@ -29,8 +29,11 @@ export default async (req) => {
     'oem (OEM or cross-reference number if printed), ' +
     'category (one of: Brakes, Steering, Electrical, Engine, Suspension, Transmission, Body, Filters, Cooling, Other), ' +
     'dimensions (any size/spec printed on it, else ""), ' +
-    'engine_specific (true only if it is an engine/electrical part whose fit depends on the engine code, else false). ' +
-    'Use an empty string "" for anything not visible. Never guess a part number or OEM you cannot read.';
+    'engine_specific (true only if it is an engine/electrical part whose fit depends on the engine code, else false), ' +
+    'fitments (ONLY if the packaging explicitly prints compatible vehicles/applications: an array of objects each with ' +
+    'make, model, year_from (number or ""), year_to (number or ""), engine (code if shown, else ""); ' +
+    'use an empty array [] if no vehicles are printed — do NOT guess vehicle compatibility). ' +
+    'Use an empty string "" for anything not visible. Never guess a part number, OEM, or vehicle you cannot read.';
 
   const payload = {
     contents: [{ parts: [ { text: prompt }, { inline_data: { mime_type: mime, data: image } } ] }],
