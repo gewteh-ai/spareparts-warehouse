@@ -687,13 +687,19 @@ function resetAddForm(){
 // Shared: send a photo to the AI function and return the extracted fields.
 async function aiIdentify(file){
   const image=await downscaleToBase64(file, 1024, 0.7);
-  const resp=await fetch('/.netlify/functions/identify-part', {
-    method:'POST', headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({ image, mime:'image/jpeg' })
-  });
-  const out=await resp.json().catch(()=>({}));
-  if(!resp.ok || out.error) throw new Error(out.error || ('HTTP '+resp.status));
-  return out.result||{};
+  const body=JSON.stringify({ image, mime:'image/jpeg' });
+  const endpoints=['/api/identify-part','/.netlify/functions/identify-part']; // Vercel first, Netlify fallback
+  let lastErr='AI endpoint not found';
+  for(const url of endpoints){
+    let resp;
+    try{ resp=await fetch(url,{ method:'POST', headers:{'Content-Type':'application/json'}, body }); }
+    catch(e){ lastErr=e.message||'network error'; continue; }
+    if(resp.status===404){ lastErr='endpoint not found'; continue; }
+    const out=await resp.json().catch(()=>({}));
+    if(!resp.ok || out.error) throw new Error(out.error || ('HTTP '+resp.status));
+    return out.result||{};
+  }
+  throw new Error(lastErr);
 }
 
 // Add Part: fill the form (and compatible vehicles) from a photo.
