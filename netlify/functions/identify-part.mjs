@@ -2,7 +2,7 @@
 // read it, and returns structured fields as JSON. The API key stays here on
 // the server (Netlify env var GEMINI_API_KEY) and is never exposed to the app.
 
-const MODEL = 'gemini-2.0-flash'; // change here if you want a different Gemini model
+const MODEL = 'gemini-2.0-flash-lite'; // lighter model; change here if needed
 
 const json = (obj, status = 200) =>
   new Response(JSON.stringify(obj), { status, headers: { 'Content-Type': 'application/json' } });
