@@ -755,11 +755,23 @@ function downscaleToBase64(file, maxDim, quality){
 }
 
 // ------------------------------------------------------------------ FREE OCR (no cost, unlimited, in-browser)
+function niceStage(s){
+  s=(s||'').toLowerCase();
+  if(s.includes('traineddata')||(s.includes('load')&&s.includes('lang'))) return 'Downloading reader (first time)…';
+  if(s.includes('core')||s.includes('loading tesseract')) return 'Loading reader…';
+  if(s.includes('initial')) return 'Preparing…';
+  if(s.includes('recogniz')) return 'Reading text…';
+  return 'Working…';
+}
+function withTimeout(promise, ms){
+  return Promise.race([ promise,
+    new Promise((_,rej)=>setTimeout(()=>rej(new Error('the reader took too long to download — check your internet (try wifi) and tap again; the first load is the slow one.')), ms)) ]);
+}
 async function runOCR(file, onProgress){
-  if(typeof Tesseract==='undefined') throw new Error('text reader not loaded — check your internet and reload.');
-  const { data } = await Tesseract.recognize(file, 'eng', {
-    logger: m => { if(m.status==='recognizing text' && onProgress) onProgress(Math.round((m.progress||0)*100)); }
-  });
+  if(typeof Tesseract==='undefined') throw new Error('text reader not loaded — check your internet and reload the page.');
+  const { data } = await withTimeout(Tesseract.recognize(file, 'eng', {
+    logger: m => { if(onProgress) onProgress(m.status||'', Math.round((m.progress||0)*100)); }
+  }), 120000);
   return (data && data.text) ? data.text : '';
 }
 // Pull likely part-number / code tokens out of the read text.
@@ -771,9 +783,9 @@ function extractCodes(text){
 async function ocrAdd(ev){
   const file=ev.target.files[0]; ev.target.value=''; if(!file) return;
   const status=document.getElementById('ai-status');
-  status.style.color='#95a1bd'; status.textContent='Reading text… 0%';
+  status.style.color='#95a1bd'; status.textContent='Loading reader (first time can take ~20–40s)…';
   try{
-    const text=await runOCR(file, p=>{ status.textContent='Reading text… '+p+'%'; });
+    const text=await runOCR(file, (stage,p)=>{ status.textContent=niceStage(stage)+' '+p+'%'; });
     const codes=extractCodes(text);
     const pnEl=document.getElementById('a-pn'), oemEl=document.getElementById('a-oem');
     if(codes[0] && !pnEl.value.trim()) pnEl.value=codes[0];
@@ -789,9 +801,9 @@ async function ocrAdd(ev){
 async function ocrFind(ev){
   const file=ev.target.files[0]; ev.target.value=''; if(!file) return;
   const status=document.getElementById('find-scan-status');
-  status.style.color='#95a1bd'; status.textContent='Reading text… 0%';
+  status.style.color='#95a1bd'; status.textContent='Loading reader (first time can take ~20–40s)…';
   try{
-    const text=await runOCR(file, p=>{ status.textContent='Reading text… '+p+'%'; });
+    const text=await runOCR(file, (stage,p)=>{ status.textContent=niceStage(stage)+' '+p+'%'; });
     const codes=extractCodes(text);
     if(!codes.length){ status.style.color='#fca5a5';
       status.textContent='No part number detected — try a clearer photo of the printed label.'; return; }
