@@ -139,13 +139,13 @@
       <div class="flex" style="margin-top:12px">
         <button class="btn" onclick="runFind()">Show matching parts</button>
         <button class="btn ghost" onclick="clearFind()">Reset</button>
-        <button class="btn" onclick="document.getElementById('ocr-find-cam').click()">📷 Scan to find (free)</button>
-        <button class="btn ghost" onclick="document.getElementById('ocr-find-lib').click()">🖼️ From gallery (free)</button>
-        <input type="file" id="ocr-find-cam" accept="image/*" capture="environment" style="display:none" onchange="ocrFind(event)"/>
-        <input type="file" id="ocr-find-lib" accept="image/*" style="display:none" onchange="ocrFind(event)"/>
-        <button class="mini" onclick="document.getElementById('find-photo-lib').click()">✨ AI (needs credits)</button>
+        <button class="btn" onclick="document.getElementById('find-photo-cam').click()">✨ Identify by photo (AI)</button>
+        <button class="btn ghost" onclick="document.getElementById('find-photo-lib').click()">🖼️ Gallery (AI)</button>
         <input type="file" id="find-photo-cam" accept="image/*" capture="environment" style="display:none" onchange="scanFind(event)"/>
         <input type="file" id="find-photo-lib" accept="image/*" style="display:none" onchange="scanFind(event)"/>
+        <button class="mini" onclick="document.getElementById('ocr-find-cam').click()">free text scan</button>
+        <input type="file" id="ocr-find-cam" accept="image/*" capture="environment" style="display:none" onchange="ocrFind(event)"/>
+        <input type="file" id="ocr-find-lib" accept="image/*" style="display:none" onchange="ocrFind(event)"/>
       </div>
       <div id="find-scan-status" class="hint" style="margin-top:8px"></div>
     </div>
@@ -179,22 +179,24 @@
     <div class="panel">
       <h2 id="add-title">Add a new part</h2>
       <div class="card" style="margin-bottom:14px">
-        <div class="hint" style="margin-bottom:6px"><b>📷 Scan a part to auto-fill — free &amp; unlimited</b></div>
+        <div class="hint" style="margin-bottom:6px"><b>✨ Scan a part with AI to auto-fill</b></div>
         <div class="flex">
-          <button class="btn" onclick="document.getElementById('ocr-add-cam').click()">Take photo</button>
-          <button class="btn ghost" onclick="document.getElementById('ocr-add-lib').click()">Choose from gallery</button>
-          <input type="file" id="ocr-add-cam" accept="image/*" capture="environment" style="display:none" onchange="ocrAdd(event)"/>
-          <input type="file" id="ocr-add-lib" accept="image/*" style="display:none" onchange="ocrAdd(event)"/>
-          <span id="ai-status" class="hint"></span>
-        </div>
-        <div class="hint" style="margin-top:6px">Reads printed text (part number, brand) off the box — no cost, works on phone &amp; laptop. First scan downloads a small reader (~a few MB), then it's quick. Always check before saving.</div>
-        <details style="margin-top:8px"><summary class="hint" style="cursor:pointer">Show text the scanner read</summary>
-          <pre id="ocr-add-text" style="white-space:pre-wrap;font-size:12px;color:var(--muted);margin:6px 0 0;max-height:150px;overflow:auto"></pre></details>
-        <div class="flex" style="margin-top:10px">
-          <button class="mini" onclick="document.getElementById('ai-photo-lib').click()">✨ Use smart AI instead (needs Google credits)</button>
+          <button class="btn" onclick="document.getElementById('ai-photo-cam').click()">📷 Take photo</button>
+          <button class="btn ghost" onclick="document.getElementById('ai-photo-lib').click()">🖼️ Choose from gallery</button>
           <input type="file" id="ai-photo-cam" accept="image/*" capture="environment" style="display:none" onchange="scanPart(event)"/>
           <input type="file" id="ai-photo-lib" accept="image/*" style="display:none" onchange="scanPart(event)"/>
+          <span id="ai-status" class="hint"></span>
         </div>
+        <div class="hint" style="margin-top:6px">AI reads the part/box and fills name, brand, part number, category, and any compatible vehicles printed on it. Always review before saving.</div>
+        <details style="margin-top:8px"><summary class="hint" style="cursor:pointer">Free text reader (no AI, unlimited) — reads printed text only</summary>
+          <div class="flex" style="margin-top:8px">
+            <button class="mini" onclick="document.getElementById('ocr-add-cam').click()">📷 Photo (free)</button>
+            <button class="mini" onclick="document.getElementById('ocr-add-lib').click()">🖼️ Gallery (free)</button>
+            <input type="file" id="ocr-add-cam" accept="image/*" capture="environment" style="display:none" onchange="ocrAdd(event)"/>
+            <input type="file" id="ocr-add-lib" accept="image/*" style="display:none" onchange="ocrAdd(event)"/>
+          </div>
+          <pre id="ocr-add-text" style="white-space:pre-wrap;font-size:12px;color:var(--muted);margin:6px 0 0;max-height:150px;overflow:auto"></pre>
+        </details>
       </div>
       <div class="grid g3">
         <div><label>Part number / SKU</label><input id="a-pn" placeholder="TRE-555-1001"/></div>
