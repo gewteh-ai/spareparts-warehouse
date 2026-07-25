@@ -776,8 +776,28 @@ async function runOCR(file, onProgress){
 }
 // Pull likely part-number / code tokens out of the read text.
 function extractCodes(text){
-  const tokens = (text.toUpperCase().match(/[A-Z0-9][A-Z0-9\-\/\.]{3,}/g) || []);
-  return [...new Set(tokens.filter(t => /[0-9]/.test(t) && t.length>=5))].sort((a,b)=>b.length-a.length);
+  const tokens = (text.toUpperCase().match(/[A-Z0-9][A-Z0-9\-\/\.]{2,}/g) || []);
+  return [...new Set(tokens.filter(t => /[0-9]/.test(t) && t.length>=4))].sort((a,b)=>b.length-a.length);
+}
+// Dictionaries to also guess the part name + brand from the read text.
+const PART_KEYWORDS=[['BRAKE PAD','Brake Pad'],['DISC PAD','Brake Pad'],['BRAKE DISC','Brake Disc'],
+ ['TIE ROD','Tie Rod End'],['RACK END','Rack End'],['BALL JOINT','Ball Joint'],
+ ['STARTER','Starter Motor'],['ALTERNATOR','Alternator'],['OIL FILTER','Oil Filter'],
+ ['AIR FILTER','Air Filter'],['FUEL FILTER','Fuel Filter'],['CABIN FILTER','Cabin Filter'],
+ ['CLUTCH','Clutch Kit'],['SHOCK','Shock Absorber'],['ABSORBER','Shock Absorber'],
+ ['BUMPER','Bumper'],['RADIATOR','Radiator'],['SPARK PLUG','Spark Plug'],['WIPER','Wiper Blade'],
+ ['STABILIZER','Stabilizer Link'],['STABILISER','Stabilizer Link'],['ENGINE MOUNT','Engine Mounting'],
+ ['TIMING BELT','Timing Belt'],['FAN BELT','Fan Belt'],['WATER PUMP','Water Pump'],
+ ['FUEL PUMP','Fuel Pump'],['BEARING','Bearing']];
+const BRANDS=['555','DENSO','AISIN','BOSCH','NGK','KYB','GATES','EXEDY','CTR','GMB','NSK','KOYO',
+ 'MASUMA','FEBEST','TRW','VALEO','MANN','SAKURA','BLUE PRINT','NIPPARTS','ASIMCO','FEBI'];
+function findKeyword(list, up){
+  for(const item of list){
+    const kw=Array.isArray(item)?item[0]:item;
+    const re=new RegExp('\\b'+kw.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'\\b');
+    if(re.test(up)) return Array.isArray(item)?item[1]:item;
+  }
+  return '';
 }
 // Add Part: read the box, fill likely codes, show the full text for manual pick.
 async function ocrAdd(ev){
@@ -786,15 +806,23 @@ async function ocrAdd(ev){
   status.style.color='#95a1bd'; status.textContent='Loading reader (first time can take ~20–40s)…';
   try{
     const text=await runOCR(file, (stage,p)=>{ status.textContent=niceStage(stage)+' '+p+'%'; });
+    const up=text.toUpperCase();
     const codes=extractCodes(text);
     const pnEl=document.getElementById('a-pn'), oemEl=document.getElementById('a-oem');
-    if(codes[0] && !pnEl.value.trim()) pnEl.value=codes[0];
-    if(codes[1] && !oemEl.value.trim()) oemEl.value=codes[1];
+    const nameEl=document.getElementById('a-name'), brandEl=document.getElementById('a-brand');
+    const filled=[];
+    if(codes[0]){ pnEl.value=codes[0]; filled.push('part no.'); }
+    if(codes[1]){ oemEl.value=codes[1]; filled.push('OEM'); }
+    const gName=findKeyword(PART_KEYWORDS, up); if(gName){ nameEl.value=gName; filled.push('name'); }
+    const gBrand=findKeyword(BRANDS.map(b=>[b,b]), up); if(gBrand){ brandEl.value=gBrand; filled.push('brand'); }
     const pre=document.getElementById('ocr-add-text'); if(pre) pre.textContent=(text.trim()||'(no text found)');
-    status.style.color='#86efac';
-    status.textContent = codes.length
-      ? '✔ Read the label — filled likely code(s). Check them and fill name/brand from the text below, then Save.'
-      : '✔ Photo read, but no clear part number found. See the text below and fill the fields.';
+    if(filled.length){
+      status.style.color='#86efac';
+      status.textContent='✔ Filled: '+filled.join(', ')+'. Check them, add anything missing from the text below, then Save.';
+    } else {
+      status.style.color='#fca5a5';
+      status.textContent='Read the photo but couldn’t pick out details. Tip: photograph the printed label/box (not the bare part), close-up and well-lit. See the text it read below.';
+    }
   }catch(e){ status.style.color='#fca5a5'; status.textContent='Could not read the photo: '+e.message; }
 }
 // Find Parts: read a customer's part and search inventory for the code.
