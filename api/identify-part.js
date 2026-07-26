@@ -3,7 +3,34 @@
 // env var GEMINI_API_KEY) and is never exposed to the app.
 // (CommonJS so it works without a package.json "type":"module".)
 
-const MODELS = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-flash-latest', 'gemini-2.5-flash-lite'];
+// Fallback list if model auto-discovery fails.
+const FALLBACK_MODELS = [
+  'gemini-flash-latest', 'gemini-2.5-flash-lite', 'gemini-2.0-flash',
+  'gemini-2.5-flash', 'gemini-flash-lite-latest', 'gemini-pro-latest'
+];
+
+// Ask Google which models this account can actually use, and pick a good one.
+async function discoverModels(key) {
+  try {
+    const r = await fetch('https://generativelanguage.googleapis.com/v1beta/models?key=' + key + '&pageSize=200');
+    const d = await r.json();
+    if (!r.ok || !Array.isArray(d.models)) return [];
+    const usable = d.models
+      .filter(m => (m.supportedGenerationMethods || []).includes('generateContent'))
+      .map(m => (m.name || '').replace(/^models\//, ''))
+      .filter(Boolean);
+    // Prefer flash-lite (cheapest) -> flash -> everything else, skip experimental/vision-tts etc.
+    const rank = (n) => {
+      n = n.toLowerCase();
+      if (/embedding|aqa|imagen|tts|vision-only/.test(n)) return 9;
+      if (n.includes('flash-lite')) return 0;
+      if (n.includes('flash')) return 1;
+      if (n.includes('pro')) return 3;
+      return 2;
+    };
+    return usable.sort((a, b) => rank(a) - rank(b));
+  } catch (e) { return []; }
+}
 
 module.exports = async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
@@ -37,12 +64,17 @@ module.exports = async function handler(req, res) {
     generationConfig: { responseMimeType: 'application/json', temperature: 0.1 }
   };
 
-  let lastErr = 'no model available';
-  for (const model of MODELS) {
+  // Build the list to try: models Google says are available, then fallbacks.
+  const discovered = await discoverModels(key);
+  const seen = {};
+  const modelsToTry = discovered.concat(FALLBACK_MODELS).filter(m => (m && !seen[m] && (seen[m] = 1)));
+
+  let lastErr = 'no usable model found';
+  for (const model of modelsToTry) {
     let resp;
     try {
       resp = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
+        'https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent?key=' + key,
         { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }
       );
     } catch (e) { lastErr = 'Could not reach the AI service.'; continue; }
@@ -57,9 +89,11 @@ module.exports = async function handler(req, res) {
     }
 
     lastErr = (data && data.error && data.error.message) || ('HTTP ' + resp.status);
-    const modelIssue = /not found|not available|not supported|unsupported|does not exist|deprecat/i.test(lastErr);
-    if (!modelIssue) return res.status(502).json({ error: lastErr });
+    // Only stop early for account-level problems (quota / auth / billing).
+    // For anything else (model unavailable, renamed, retired), try the next model.
+    const hardStop = /quota|rate limit|resource has been exhausted|api key|permission|unauthenticated|unauthorized|billing/i.test(lastErr);
+    if (hardStop) return res.status(502).json({ error: lastErr });
   }
 
-  return res.status(502).json({ error: 'No available Gemini model right now. Last error: ' + lastErr });
+  return res.status(502).json({ error: 'No usable Gemini model for your account. Last error: ' + lastErr });
 };

@@ -2,12 +2,34 @@
 // read it, and returns structured fields as JSON. The API key stays here on
 // the server (Netlify env var GEMINI_API_KEY) and is never exposed to the app.
 
-// Try these models in order; use whichever is available. This keeps the app
-// working even when Google retires/renames a model.
-const MODELS = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-flash-latest', 'gemini-2.5-flash-lite'];
+const FALLBACK_MODELS = [
+  'gemini-flash-latest', 'gemini-2.5-flash-lite', 'gemini-2.0-flash',
+  'gemini-2.5-flash', 'gemini-flash-lite-latest', 'gemini-pro-latest'
+];
 
 const json = (obj, status = 200) =>
   new Response(JSON.stringify(obj), { status, headers: { 'Content-Type': 'application/json' } });
+
+async function discoverModels(key) {
+  try {
+    const r = await fetch('https://generativelanguage.googleapis.com/v1beta/models?key=' + key + '&pageSize=200');
+    const d = await r.json();
+    if (!r.ok || !Array.isArray(d.models)) return [];
+    const usable = d.models
+      .filter(m => (m.supportedGenerationMethods || []).includes('generateContent'))
+      .map(m => (m.name || '').replace(/^models\//, ''))
+      .filter(Boolean);
+    const rank = (n) => {
+      n = n.toLowerCase();
+      if (/embedding|aqa|imagen|tts|vision-only/.test(n)) return 9;
+      if (n.includes('flash-lite')) return 0;
+      if (n.includes('flash')) return 1;
+      if (n.includes('pro')) return 3;
+      return 2;
+    };
+    return usable.sort((a, b) => rank(a) - rank(b));
+  } catch (e) { return []; }
+}
 
 export default async (req) => {
   if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
@@ -42,33 +64,31 @@ export default async (req) => {
     generationConfig: { responseMimeType: 'application/json', temperature: 0.1 }
   };
 
-  let lastErr = 'no model available';
-  for (const model of MODELS) {
+  const discovered = await discoverModels(key);
+  const seen = {};
+  const modelsToTry = discovered.concat(FALLBACK_MODELS).filter(m => (m && !seen[m] && (seen[m] = 1)));
+
+  let lastErr = 'no usable model found';
+  for (const model of modelsToTry) {
     let resp;
     try {
       resp = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
+        'https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent?key=' + key,
         { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }
       );
-    } catch (e) {
-      lastErr = 'Could not reach the AI service.';
-      continue;
-    }
+    } catch (e) { lastErr = 'Could not reach the AI service.'; continue; }
 
     const data = await resp.json().catch(() => ({}));
     if (resp.ok) {
       const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
-      let result;
-      try { result = JSON.parse(text); } catch { result = {}; }
+      let result; try { result = JSON.parse(text); } catch { result = {}; }
       return json({ result, model });
     }
 
     lastErr = data?.error?.message || ('HTTP ' + resp.status);
-    // If the model is unavailable/renamed, try the next one. For other errors
-    // (quota, auth, billing) there's no point trying more models — stop now.
-    const modelIssue = /not found|not available|not supported|unsupported|does not exist|deprecat/i.test(lastErr);
-    if (!modelIssue) return json({ error: lastErr }, 502);
+    const hardStop = /quota|rate limit|resource has been exhausted|api key|permission|unauthenticated|unauthorized|billing/i.test(lastErr);
+    if (hardStop) return json({ error: lastErr }, 502);
   }
 
-  return json({ error: 'No available Gemini model right now. Last error: ' + lastErr }, 502);
+  return json({ error: 'No usable Gemini model for your account. Last error: ' + lastErr }, 502);
 };
