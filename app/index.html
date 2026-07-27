@@ -413,20 +413,36 @@ function initFind(){
   refreshDatalists();
 }
 
+// Merge case-variations (e.g. "HYUNDAI" and "Hyundai") into ONE suggestion,
+// preferring the nicely-cased version.
+function dedupeNice(values){
+  const groups={};
+  values.forEach(v=>{
+    if(v===undefined||v===null) return;
+    const s=String(v).trim(); if(!s) return;
+    const k=s.toLowerCase();
+    (groups[k]=groups[k]||[]).push(s);
+  });
+  const pick=arr=>{
+    const mixed=arr.find(s=>/[a-z]/.test(s) && /[A-Z]/.test(s)); // e.g. "Hyundai"
+    return mixed || arr[0];
+  };
+  return Object.values(groups).map(pick).sort((a,b)=>a.toLowerCase().localeCompare(b.toLowerCase()));
+}
 // Suggestion lists = built-in options PLUS anything already used in your data,
 // so a make/model/engine you typed once shows up as a suggestion next time.
 function refreshDatalists(){
-  const makes=new Set(OPTIONS.makes), models=new Set(), engines=new Set(OPTIONS.engines);
-  Object.values(OPTIONS.models).forEach(a=>a.forEach(m=>models.add(m)));
+  const makesArr=[...OPTIONS.makes], modelsArr=[], enginesArr=[...OPTIONS.engines];
+  Object.values(OPTIONS.models).forEach(a=>a.forEach(m=>modelsArr.push(m)));
   (DB.parts||[]).forEach(p=>(p.fits||[]).forEach(f=>{
-    if(f.make) makes.add(f.make);
-    if(f.model) models.add(f.model);
-    if(f.engine) engines.add(f.engine);
+    if(f.make) makesArr.push(f.make);
+    if(f.model) modelsArr.push(f.model);
+    if(f.engine) enginesArr.push(f.engine);
   }));
   const esc=s=>String(s).replace(/"/g,'&quot;');
-  const fill=(id,set)=>{ const el=document.getElementById(id);
-    if(el) el.innerHTML=[...set].sort().map(x=>`<option value="${esc(x)}"></option>`).join(''); };
-  fill('dl-makes',makes); fill('dl-models',models); fill('dl-engines',engines);
+  const fill=(id,arr)=>{ const el=document.getElementById(id);
+    if(el) el.innerHTML=dedupeNice(arr).map(x=>`<option value="${esc(x)}"></option>`).join(''); };
+  fill('dl-makes',makesArr); fill('dl-models',modelsArr); fill('dl-engines',enginesArr);
 }
 function eqi(a,b){ return String(a||'').trim().toLowerCase()===String(b||'').trim().toLowerCase(); }
 function range(a,b){const r=[];for(let i=a;i<=b;i++)r.push(i);return r;}
