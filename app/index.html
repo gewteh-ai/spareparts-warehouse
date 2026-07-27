@@ -528,8 +528,9 @@ function renderInventory(){
   document.getElementById('inv-table').innerHTML =
     `<tr><th>Part</th><th>Brand</th><th>Part No.</th><th>Price</th><th>Stock</th><th>Bin</th><th>Adjust</th><th>Edit</th></tr>`+
     rows.map(p=>{ const low=p.qty<=p.reorder;
+      const fits=(p.fits&&p.fits.length)?`<div class="hint" style="margin-top:4px">🚗 ${fitsSummary(p.fits)}</div>`:'';
       return `<tr>
-        <td>${p.name} ${p.engineSpecific?'<span class="badge eng">ENG</span>':''}</td>
+        <td>${p.name} ${p.engineSpecific?'<span class="badge eng">ENG</span>':''}${fits}</td>
         <td>${p.brand||''}</td><td class="pn">${p.pn}</td><td>${RM(p.price)}</td>
         <td><span class="${low?'badge low':'badge stockok'}">${p.qty}</span></td>
         <td>${p.bin||''}</td>
@@ -542,10 +543,14 @@ function renderInventory(){
           <button class="mini" onclick="deletePart(${p.id})">🗑</button>
         </td></tr>`;
     }).join('');
-  const totalUnits=DB.parts.reduce((s,p)=>s+(+p.qty||0),0);
-  const totalValue=DB.parts.reduce((s,p)=>s+(+p.qty||0)*(+p.cost||0),0);
+  const rawq=(document.getElementById('inv-search').value||'').trim();
+  const allUnits=DB.parts.reduce((s,p)=>s+(+p.qty||0),0);
+  const allValue=DB.parts.reduce((s,p)=>s+(+p.qty||0)*(+p.cost||0),0);
+  const filtUnits=rows.reduce((s,p)=>s+(+p.qty||0),0);
   const sEl=document.getElementById('inv-summary');
-  if(sEl) sEl.innerHTML=`Totals: <b>${DB.parts.length}</b> parts · <b>${totalUnits}</b> units in stock · stock value <b>${RM(totalValue)}</b> (at cost)`;
+  if(sEl) sEl.innerHTML = rawq
+    ? `Showing <b>${rows.length}</b> match(es) for “${rawq}” · <b>${filtUnits}</b> units in stock`
+    : `Totals: <b>${DB.parts.length}</b> parts · <b>${allUnits}</b> units in stock · stock value <b>${RM(allValue)}</b> (at cost)`;
 }
 async function adjust(id,d){
   const p=DB.parts.find(x=>x.id===id); if(!p) return;
