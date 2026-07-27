@@ -526,12 +526,12 @@ function renderInventory(){
       ${low.map(p=>p.name+' ('+p.qty+')').join(', ')}</div>` : '';
   const rows=DB.parts.filter(p=>!q||p.pn.toLowerCase().includes(q)||p.name.toLowerCase().includes(q)||(p.brand||'').toLowerCase().includes(q));
   document.getElementById('inv-table').innerHTML =
-    `<tr><th>Part</th><th>Brand</th><th>Part No.</th><th>Price</th><th>Stock</th><th>Bin</th><th>Adjust</th><th>Edit</th></tr>`+
+    `<tr><th>Part</th><th>Brand</th><th>SKU / OEM</th><th>Price</th><th>Stock</th><th>Bin</th><th>Adjust</th><th>Edit</th></tr>`+
     rows.map(p=>{ const low=p.qty<=p.reorder;
       const fits=(p.fits&&p.fits.length)?`<div class="hint" style="margin-top:4px">🚗 ${fitsSummary(p.fits)}</div>`:'';
       return `<tr>
         <td>${p.name} ${p.engineSpecific?'<span class="badge eng">ENG</span>':''}${fits}</td>
-        <td>${p.brand||''}</td><td class="pn">${p.pn}</td><td>${RM(p.price)}</td>
+        <td>${p.brand||''}</td><td class="pn">SKU: ${p.pn}<br>OEM: ${p.oem||'—'}</td><td>${RM(p.price)}</td>
         <td><span class="${low?'badge low':'badge stockok'}">${p.qty}</span></td>
         <td>${p.bin||''}</td>
         <td class="flex">
