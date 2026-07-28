@@ -161,6 +161,7 @@
         <div class="flex" style="justify-content:flex-end">
           <input id="inv-search" placeholder="filter…" style="max-width:180px" oninput="renderInventory()"/>
           <button class="mini" onclick="loadParts()">🔄 Refresh</button>
+          <button class="mini" onclick="generateAllSkus()">🏷️ Generate SKUs</button>
           <button class="mini" onclick="exportCSV()">⤓ Export CSV</button>
           <button class="mini" onclick="document.getElementById('import-file').click()">⤒ Import CSV</button>
           <input type="file" id="import-file" accept=".csv,text/csv" style="display:none" onchange="importCSV(event)"/>
@@ -198,8 +199,15 @@
           <pre id="ocr-add-text" style="white-space:pre-wrap;font-size:12px;color:var(--muted);margin:6px 0 0;max-height:150px;overflow:auto"></pre>
         </details>
       </div>
+      <div style="margin-bottom:12px">
+        <label>SKU (internal code)</label>
+        <div class="flex" style="gap:6px">
+          <input id="a-sku" placeholder="e.g. BRP-BSH-001" style="flex:1;min-width:0"/>
+          <button class="mini" type="button" onclick="generateSku()">Generate</button>
+        </div>
+      </div>
       <div class="grid g3">
-        <div><label>Part number / SKU</label><input id="a-pn" placeholder="TRE-555-1001"/></div>
+        <div><label>Part / Mfr number</label><input id="a-pn" placeholder="D11406"/></div>
         <div><label>Part name</label><input id="a-name" placeholder="Tie Rod End (Outer)"/></div>
         <div><label>Category</label><input id="a-cat" placeholder="Steering"/></div>
       </div>
@@ -345,10 +353,10 @@ function fromRow(r){ return {
   id:r.id, pn:r.pn, name:r.name, cat:r.cat, brand:r.brand,
   price:+r.price||0, cost:+r.cost||0, oem:r.oem, qty:+r.qty||0,
   reorder:+r.reorder||0, bin:r.bin, engineSpecific:!!r.engine_specific,
-  dimensions:r.dimensions||'', fits: Array.isArray(r.fits)?r.fits:[] }; }
+  sku:r.sku||'', dimensions:r.dimensions||'', fits: Array.isArray(r.fits)?r.fits:[] }; }
 function toRow(p){ return {
   pn:p.pn, name:p.name, cat:p.cat, brand:p.brand, price:p.price, cost:p.cost,
-  oem:p.oem, qty:p.qty, reorder:p.reorder, bin:p.bin,
+  oem:p.oem, qty:p.qty, reorder:p.reorder, bin:p.bin, sku:p.sku,
   engine_specific:p.engineSpecific, dimensions:p.dimensions, fits:p.fits,
   updated_at:new Date().toISOString() }; }
 
@@ -531,7 +539,7 @@ function renderInventory(){
       const fits=(p.fits&&p.fits.length)?`<div class="hint" style="margin-top:4px">🚗 ${fitsSummary(p.fits)}</div>`:'';
       return `<tr>
         <td>${p.name} ${p.engineSpecific?'<span class="badge eng">ENG</span>':''}${fits}</td>
-        <td>${p.brand||''}</td><td class="pn">SKU: ${p.pn}<br>OEM: ${p.oem||'—'}</td><td>${RM(p.price)}</td>
+        <td>${p.brand||''}</td><td class="pn">SKU: ${p.sku||'—'}<br>PN: ${p.pn||'—'}<br>OEM: ${p.oem||'—'}</td><td>${RM(p.price)}</td>
         <td><span class="${low?'badge low':'badge stockok'}">${p.qty}</span></td>
         <td>${p.bin||''}</td>
         <td class="flex">
@@ -665,7 +673,7 @@ function addFitRow(f){ const d=document.createElement('div'); d.innerHTML=fitRow
 function startEdit(id){
   const p=DB.parts.find(x=>x.id===id); if(!p) return;
   editId=id;
-  setV('a-pn',p.pn); setV('a-name',p.name); setV('a-cat',p.cat);
+  setV('a-sku',p.sku); setV('a-pn',p.pn); setV('a-name',p.name); setV('a-cat',p.cat);
   setV('a-brand',p.brand); setV('a-price',p.price); setV('a-cost',p.cost);
   setV('a-oem',p.oem); setV('a-qty',p.qty); setV('a-reorder',p.reorder); setV('a-bin',p.bin);
   setV('a-dim',p.dimensions);
@@ -698,10 +706,73 @@ async function deletePart(id){
 }
 
 function resetAddForm(){
-  ['a-pn','a-name','a-cat','a-brand','a-price','a-cost','a-oem','a-bin','a-dim'].forEach(id=>document.getElementById(id).value='');
+  ['a-sku','a-pn','a-name','a-cat','a-brand','a-price','a-cost','a-oem','a-bin','a-dim'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('a-qty').value=0; document.getElementById('a-reorder').value=0;
   document.getElementById('a-engspec').value='no';
   document.getElementById('fit-rows').innerHTML=''; addFitRow();
+}
+
+// ------------------------------------------------------------------ SKU GENERATION
+// TYPE-BRAND-NNN(-POS), e.g. BRP-BSH-001-F
+function skuTypeCode(name){
+  const map=[['brake pad','BRP'],['disc pad','BRP'],['brake disc','BRD'],['rotor','BRD'],
+    ['tie rod','TRE'],['rack end','RKE'],['ball joint','BJT'],['starter','STR'],['alternator','ALT'],
+    ['oil filter','OFL'],['air filter','AFL'],['fuel filter','FFL'],['cabin filter','CFL'],
+    ['clutch','CLK'],['shock','SHK'],['absorber','SHK'],['bumper','BMP'],['radiator','RAD'],
+    ['water pump','WPM'],['fuel pump','FPM'],['bearing','BRG'],['spark plug','SPL'],['wiper','WPR'],
+    ['stabilizer','STB'],['stabiliser','STB'],['engine mount','EMT'],['timing belt','TMB'],['fan belt','FNB']];
+  const n=(name||'').toLowerCase();
+  for(const it of map){ if(n.includes(it[0])) return it[1]; }
+  const w=(name||'PRT').toUpperCase().replace(/[^A-Z]/g,'');
+  return (w.slice(0,3)||'PRT').padEnd(3,'X');
+}
+const BRAND_CODES={'555':'555','bosch':'BSH','denso':'DNS','aisin':'AIS','kyb':'KYB','ctr':'CTR',
+  'sakura':'SKR','ngk':'NGK','mk kashiyama':'MKK','kashiyama':'MKK','exedy':'EXD','gates':'GTS',
+  'gmb':'GMB','nsk':'NSK','koyo':'KYO','sport master':'SPM','aftermarket':'AFT','genuine':'OEM','oem':'OEM'};
+function skuBrandCode(brand){
+  const b=(brand||'').trim().toLowerCase();
+  if(!b) return 'GEN';
+  if(BRAND_CODES[b]) return BRAND_CODES[b];
+  const words=b.replace(/[^a-z0-9 ]/g,'').split(/\s+/).filter(Boolean);
+  if(!words.length) return 'GEN';
+  if(words.length>=2) return (words[0][0]+words[1][0]+(words[0][1]||'')).toUpperCase();
+  return words[0].slice(0,3).toUpperCase();
+}
+function skuPosCode(name){
+  const n=(name||'').toLowerCase();
+  if(/\(f\)|\bfront\b/.test(n)) return 'F';
+  if(/\(r\)|\brear\b/.test(n)) return 'R';
+  return '';
+}
+function makeSku(name,brand,num){
+  return skuTypeCode(name)+'-'+skuBrandCode(brand)+'-'+String(num).padStart(3,'0')+(skuPosCode(name)?'-'+skuPosCode(name):'');
+}
+function nextSkuNumber(t){
+  let max=0;
+  DB.parts.forEach(p=>{ const m=(p.sku||'').match(new RegExp('^'+t+'-[A-Z0-9]+-(\\d+)')); if(m) max=Math.max(max,parseInt(m[1],10)); });
+  return max+1;
+}
+function generateSku(){
+  const name=v('a-name'); const msg=document.getElementById('add-msg');
+  if(!name){ msg.style.color='#fca5a5'; msg.textContent='Enter a part name first, then tap Generate.'; return; }
+  let n=nextSkuNumber(skuTypeCode(name)), sku;
+  do { sku=makeSku(name, v('a-brand'), n); n++; } while(DB.parts.some(p=>(p.sku||'').toLowerCase()===sku.toLowerCase()));
+  document.getElementById('a-sku').value=sku;
+  msg.style.color='#86efac'; msg.textContent='SKU generated: '+sku+' (you can edit it).';
+}
+async function generateAllSkus(){
+  if(!confirm('Generate SKUs for ALL parts using the standard scheme? This fills/replaces the SKU field with a clean, consistent set (your part & OEM numbers are untouched).')) return;
+  const counters={};
+  const sorted=[...DB.parts].sort((a,b)=>(a.name||'').localeCompare(b.name||'')||(a.brand||'').localeCompare(b.brand||''));
+  let done=0, failed=0;
+  for(const p of sorted){
+    const t=skuTypeCode(p.name); counters[t]=(counters[t]||0)+1;
+    const sku=makeSku(p.name, p.brand, counters[t]);
+    const { error } = await sb.from('parts').update({ sku, updated_at:new Date().toISOString() }).eq('id',p.id);
+    if(error) failed++; else done++;
+  }
+  await loadParts(); renderInventory();
+  alert('Generated SKUs for '+done+' part(s)'+(failed?(', '+failed+' failed'):'')+'.');
 }
 
 // ------------------------------------------------------------------ AI PHOTO SCAN
@@ -918,7 +989,7 @@ async function saveePart(){
   })).filter(f=>f.make&&f.model);
   const record={ pn,name,cat:v('a-cat'),brand:v('a-brand'),price,cost:parseFloat(v('a-cost'))||0,
     oem:v('a-oem'),qty:+v('a-qty')||0,reorder:+v('a-reorder')||0,bin:v('a-bin'),
-    dimensions:v('a-dim'), engineSpecific:v('a-engspec')==='yes', fits };
+    sku:v('a-sku'), dimensions:v('a-dim'), engineSpecific:v('a-engspec')==='yes', fits };
 
   msg.style.color='#95a1bd'; msg.textContent='Saving…';
   if(editId!==null){
