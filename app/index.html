@@ -228,6 +228,11 @@
         <input id="a-dim" placeholder="e.g. Length 320mm · OD 45mm · Thread M12x1.25"/>
       </div>
 
+      <h2 style="margin:20px 0 8px">Alternate numbers / cross-references</h2>
+      <div class="hint">Add the genuine OEM number and each brand's number (555, CTR…), or a superseded/old number. Every number here is searchable.</div>
+      <div id="xref-rows" style="margin-top:10px"></div>
+      <button class="btn ghost" onclick="addCrossRow()">+ Add number</button>
+
       <h2 style="margin:20px 0 8px">Compatible vehicles (add as many as needed)</h2>
       <div class="hint">Leave a factor as "Any" if it doesn't affect fitment. Engine-specific parts (starters, ECUs) should set the engine.</div>
       <div id="fit-rows" style="margin-top:10px"></div>
@@ -245,6 +250,14 @@
 <datalist id="dl-makes"></datalist>
 <datalist id="dl-models"></datalist>
 <datalist id="dl-engines"></datalist>
+<datalist id="dl-xrlabels">
+  <option value="Genuine OEM"></option>
+  <option value="Superseded by"></option>
+  <option value="Replaces (old no.)"></option>
+  <option value="Interchange"></option>
+  <option value="555"></option><option value="CTR"></option>
+  <option value="Bosch"></option><option value="Denso"></option>
+</datalist>
 </div><!-- /#app -->
 
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
@@ -351,11 +364,12 @@ function fromRow(r){ return {
   id:r.id, pn:r.pn, name:r.name, cat:r.cat, brand:r.brand,
   price:+r.price||0, cost:+r.cost||0, oem:r.oem, qty:+r.qty||0,
   reorder:+r.reorder||0, bin:r.bin, engineSpecific:!!r.engine_specific,
-  dimensions:r.dimensions||'', fits: Array.isArray(r.fits)?r.fits:[] }; }
+  dimensions:r.dimensions||'', crossrefs: Array.isArray(r.crossrefs)?r.crossrefs:[],
+  fits: Array.isArray(r.fits)?r.fits:[] }; }
 function toRow(p){ return {
   pn:p.pn, name:p.name, cat:p.cat, brand:p.brand, price:p.price, cost:p.cost,
   oem:p.oem, qty:p.qty, reorder:p.reorder, bin:p.bin,
-  engine_specific:p.engineSpecific, dimensions:p.dimensions, fits:p.fits,
+  engine_specific:p.engineSpecific, dimensions:p.dimensions, crossrefs:p.crossrefs, fits:p.fits,
   updated_at:new Date().toISOString() }; }
 
 async function loadParts(){
@@ -475,7 +489,8 @@ function runFind(){
   if(q){
     results = DB.parts.filter(p =>
       p.pn.toLowerCase().includes(q) || p.name.toLowerCase().includes(q) ||
-      (p.brand||'').toLowerCase().includes(q) || (p.oem||'').toLowerCase().includes(q));
+      (p.brand||'').toLowerCase().includes(q) || (p.oem||'').toLowerCase().includes(q) ||
+      (p.crossrefs||[]).some(c=>((c.number||'')+' '+(c.label||'')).toLowerCase().includes(q)));
   } else {
     if(!sel.make){ box.innerHTML='<div class="panel empty">Pick a Make (or use search) to begin.</div>'; return; }
     results = DB.parts.filter(p => (p.fits||[]).some(f=>fitMatches(f,sel)));
@@ -511,6 +526,7 @@ function partCard(p, groupName){
         <div class="pname">${p.name} <span class="muted">— ${p.brand||''}</span>
           ${p.engineSpecific?'<span class="badge eng">ENGINE-SPECIFIC</span>':''}</div>
         <div class="pn">${p.pn}${p.oem?(' · OEM '+p.oem):''}</div>
+        ${(p.crossrefs&&p.crossrefs.length)?`<div class="pn">🔁 ${p.crossrefs.map(c=>(c.label?c.label+': ':'')+c.number).join(' · ')}</div>`:''}
         ${p.dimensions?`<div class="pn">📏 ${p.dimensions}</div>`:''}
       </div>
       <div style="text-align:right">
@@ -530,14 +546,14 @@ function renderInventory(){
   document.getElementById('low-alerts').innerHTML = low.length ?
     `<div class="warnbox">🔔 <b>${low.length}</b> part(s) at/below reorder point: 
       ${low.map(p=>p.name+' ('+p.qty+')').join(', ')}</div>` : '';
-  const rows=DB.parts.filter(p=>!q||p.pn.toLowerCase().includes(q)||p.name.toLowerCase().includes(q)||(p.brand||'').toLowerCase().includes(q));
+  const rows=DB.parts.filter(p=>!q||p.pn.toLowerCase().includes(q)||p.name.toLowerCase().includes(q)||(p.brand||'').toLowerCase().includes(q)||(p.oem||'').toLowerCase().includes(q)||(p.crossrefs||[]).some(c=>((c.number||'')+' '+(c.label||'')).toLowerCase().includes(q)));
   document.getElementById('inv-table').innerHTML =
     `<tr><th>Part</th><th>Brand</th><th>SKU / OEM</th><th>Price</th><th>Stock</th><th>Bin</th><th>Adjust</th><th>Edit</th></tr>`+
     rows.map(p=>{ const low=p.qty<=p.reorder;
       const fits=(p.fits&&p.fits.length)?`<div class="hint" style="margin-top:4px">🚗 ${fitsSummary(p.fits)}</div>`:'';
       return `<tr>
         <td>${p.name} ${p.engineSpecific?'<span class="badge eng">ENG</span>':''}${fits}</td>
-        <td>${p.brand||''}</td><td class="pn">SKU: ${p.pn||'—'}<br>OEM: ${p.oem||'—'}</td><td>${RM(p.price)}</td>
+        <td>${p.brand||''}</td><td class="pn">SKU: ${p.pn||'—'}<br>OEM: ${p.oem||'—'}${(p.crossrefs&&p.crossrefs.length)?'<br>'+p.crossrefs.map(c=>(c.label?c.label+': ':'')+c.number).join('<br>'):''}</td><td>${RM(p.price)}</td>
         <td><span class="${low?'badge low':'badge stockok'}">${p.qty}</span></td>
         <td>${p.bin||''}</td>
         <td class="flex">
@@ -668,6 +684,18 @@ function addFitRow(f){ const d=document.createElement('div'); d.innerHTML=fitRow
   return row;
 }
 
+function crossRowHTML(){
+  return `<div class="xrefrow" style="display:grid;grid-template-columns:1fr 1.4fr auto;gap:8px;align-items:end;margin-bottom:8px">
+    <div><label>Label</label><input class="xr-label" list="dl-xrlabels" placeholder="Genuine OEM / 555 / Superseded by"/></div>
+    <div><label>Number</label><input class="xr-num" placeholder="04465-0D010"/></div>
+    <button class="mini" onclick="this.parentElement.remove()" style="height:37px">✕</button>
+  </div>`;
+}
+function addCrossRow(cr){ const d=document.createElement('div'); d.innerHTML=crossRowHTML();
+  const row=d.firstChild; document.getElementById('xref-rows').appendChild(row);
+  if(cr){ row.querySelector('.xr-label').value=cr.label||''; row.querySelector('.xr-num').value=cr.number||''; }
+  return row;
+}
 function startEdit(id){
   const p=DB.parts.find(x=>x.id===id); if(!p) return;
   editId=id;
@@ -678,6 +706,8 @@ function startEdit(id){
   document.getElementById('a-engspec').value = p.engineSpecific ? 'yes' : 'no';
   document.getElementById('fit-rows').innerHTML='';
   ((p.fits&&p.fits.length)?p.fits:[null]).forEach(f=>addFitRow(f));
+  document.getElementById('xref-rows').innerHTML='';
+  (p.crossrefs||[]).forEach(cr=>addCrossRow(cr));
   document.getElementById('add-title').textContent = 'Edit part — '+p.name;
   document.getElementById('save-btn').textContent = 'Update part';
   document.getElementById('cancel-edit-btn').style.display='';
@@ -708,6 +738,7 @@ function resetAddForm(){
   document.getElementById('a-qty').value=0; document.getElementById('a-reorder').value=0;
   document.getElementById('a-engspec').value='no';
   document.getElementById('fit-rows').innerHTML=''; addFitRow();
+  document.getElementById('xref-rows').innerHTML='';
 }
 
 // ------------------------------------------------------------------ SKU GENERATION
@@ -988,9 +1019,13 @@ async function saveePart(){
     engine:r.querySelector('.fr-engine').value, trans:r.querySelector('.fr-trans').value,
     drive:r.querySelector('.fr-drive').value
   })).filter(f=>f.make&&f.model);
+  const crossrefs=[...document.querySelectorAll('#xref-rows .xrefrow')].map(r=>({
+    label:r.querySelector('.xr-label').value.trim(),
+    number:r.querySelector('.xr-num').value.trim()
+  })).filter(c=>c.number);
   const record={ pn,name,cat:v('a-cat'),brand:v('a-brand'),price,cost:parseFloat(v('a-cost'))||0,
     oem:v('a-oem'),qty:+v('a-qty')||0,reorder:+v('a-reorder')||0,bin:v('a-bin'),
-    dimensions:v('a-dim'), engineSpecific:v('a-engspec')==='yes', fits };
+    dimensions:v('a-dim'), engineSpecific:v('a-engspec')==='yes', fits, crossrefs };
 
   msg.style.color='#95a1bd'; msg.textContent='Saving…';
   if(editId!==null){
