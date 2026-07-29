@@ -477,6 +477,50 @@ function fitMatches(f,sel){
   return true;
 }
 
+// ------------------------------------------------------------------ SEARCH SYNONYMS
+// Groups of names customers use for the SAME part. Searching any term finds all.
+const SYNONYMS = [
+  ['brake pad','disc brake pad','brake lining','disc pad'],
+  ['brake disc','brake rotor','disc rotor'],
+  ['tie rod end','tie rod','steering tie rod'],
+  ['rack end','steering rack end','inner tie rod'],
+  ['ball joint','lower ball joint','upper ball joint'],
+  ['shock absorber','shock','damper','absorber'],
+  ['stabilizer link','stabiliser link','link rod','sway bar link','drop link'],
+  ['starter motor','starter','self starter'],
+  ['alternator','dynamo','generator'],
+  ['oil filter','engine oil filter'],
+  ['air filter','air cleaner'],
+  ['fuel filter','petrol filter','diesel filter'],
+  ['cabin filter','aircond filter','a/c filter','pollen filter'],
+  ['spark plug','ignition plug'],
+  ['wiper blade','wiper'],
+  ['engine mounting','engine mount','engine support'],
+  ['clutch kit','clutch','clutch set'],
+  ['fan belt','drive belt','v-belt','poly-v belt'],
+  ['timing belt','cam belt'],
+  ['water pump','coolant pump'],
+  ['fuel pump','petrol pump'],
+  ['radiator','cooling radiator'],
+  ['bumper','bumper bar','front bar','rear bar'],
+  ['wheel bearing','hub bearing','bearing']
+];
+function expandQuery(q){
+  q=String(q||'').trim().toLowerCase();
+  if(!q) return [];
+  const terms=new Set([q]);
+  SYNONYMS.forEach(group=>{ if(group.some(t=> t.includes(q) || q.includes(t))) group.forEach(t=>terms.add(t)); });
+  return [...terms];
+}
+function partMatchesQuery(p, q){
+  const terms=expandQuery(q);
+  if(!terms.length) return true;
+  const hay=[p.pn, p.name, p.brand, p.oem,
+    (p.crossrefs||[]).map(c=>(c.number||'')+' '+(c.brand||'')+' '+(c.category||c.label||'')).join(' ')
+  ].join(' ').toLowerCase();
+  return terms.some(t=>hay.includes(t));
+}
+
 function runFind(){
   const q=document.getElementById('f-search').value.trim().toLowerCase();
   const sel={ make:val('f-make'),model:val('f-model'),year:val('f-year'),
@@ -485,10 +529,7 @@ function runFind(){
   let results=[];
 
   if(q){
-    results = DB.parts.filter(p =>
-      p.pn.toLowerCase().includes(q) || p.name.toLowerCase().includes(q) ||
-      (p.brand||'').toLowerCase().includes(q) || (p.oem||'').toLowerCase().includes(q) ||
-      (p.crossrefs||[]).some(c=>((c.number||'')+' '+(c.brand||'')+' '+(c.category||c.label||'')).toLowerCase().includes(q)));
+    results = DB.parts.filter(p => partMatchesQuery(p, q));
   } else {
     if(!sel.make){ box.innerHTML='<div class="panel empty">Pick a Make (or use search) to begin.</div>'; return; }
     results = DB.parts.filter(p => (p.fits||[]).some(f=>fitMatches(f,sel)));
@@ -544,7 +585,7 @@ function renderInventory(){
   document.getElementById('low-alerts').innerHTML = low.length ?
     `<div class="warnbox">🔔 <b>${low.length}</b> part(s) at/below reorder point: 
       ${low.map(p=>p.name+' ('+p.qty+')').join(', ')}</div>` : '';
-  const rows=DB.parts.filter(p=>!q||p.pn.toLowerCase().includes(q)||p.name.toLowerCase().includes(q)||(p.brand||'').toLowerCase().includes(q)||(p.oem||'').toLowerCase().includes(q)||(p.crossrefs||[]).some(c=>((c.number||'')+' '+(c.brand||'')+' '+(c.category||c.label||'')).toLowerCase().includes(q)));
+  const rows=DB.parts.filter(p=>!q||partMatchesQuery(p,q));
   document.getElementById('inv-table').innerHTML =
     `<tr><th>Part</th><th>Brand</th><th>SKU / OEM</th><th>Price</th><th>Stock</th><th>Bin</th><th>Adjust</th><th>Edit</th></tr>`+
     rows.map(p=>{ const low=p.qty<=p.reorder;
