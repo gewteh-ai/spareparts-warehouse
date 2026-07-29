@@ -213,7 +213,7 @@
         <div><label>Brand</label><input id="a-brand" placeholder="555"/></div>
         <div><label>Selling price (RM)</label><input id="a-price" type="number" step="0.01" placeholder="85.00"/></div>
         <div><label>Cost (RM)</label><input id="a-cost" type="number" step="0.01" placeholder="52.00"/></div>
-        <div><label>OEM / cross-ref no.</label><input id="a-oem" placeholder="45046-09280"/></div>
+        <div><label>Original OEM</label><input id="a-oem" placeholder="45046-09280"/></div>
       </div>
       <div class="grid g4" style="margin-top:12px">
         <div><label>Qty in stock</label><input id="a-qty" type="number" value="0"/></div>
@@ -228,8 +228,8 @@
         <input id="a-dim" placeholder="e.g. Length 320mm · OD 45mm · Thread M12x1.25"/>
       </div>
 
-      <h2 style="margin:20px 0 8px">Alternate numbers / cross-references</h2>
-      <div class="hint">Add the genuine OEM number and each brand's number (555, CTR…), or a superseded/old number. Every number here is searchable.</div>
+      <h2 style="margin:20px 0 8px">Brand OEM &amp; cross-references</h2>
+      <div class="hint">Add each brand's OEM number (555, CTR…), plus any superseded or interchange numbers. All are searchable. (The car maker's number goes in the "Original OEM" field above.)</div>
       <div id="xref-rows" style="margin-top:10px"></div>
       <button class="btn ghost" onclick="addCrossRow()">+ Add number</button>
 
@@ -523,7 +523,7 @@ function partCard(p, groupName){
       <div>
         <div class="pname">${p.name} <span class="muted">— ${p.brand||''}</span>
           ${p.engineSpecific?'<span class="badge eng">ENGINE-SPECIFIC</span>':''}</div>
-        <div class="pn">${p.pn}${p.oem?(' · OEM '+p.oem):''}</div>
+        <div class="pn">${p.pn}${p.oem?(' · Original OEM '+p.oem):''}</div>
         ${(p.crossrefs&&p.crossrefs.length)?crossrefLines(p.crossrefs).map(l=>`<div class="pn">🔁 ${l}</div>`).join(''):''}
         ${p.dimensions?`<div class="pn">📏 ${p.dimensions}</div>`:''}
       </div>
@@ -551,7 +551,7 @@ function renderInventory(){
       const fits=(p.fits&&p.fits.length)?`<div class="hint" style="margin-top:4px">🚗 ${fitsSummary(p.fits)}</div>`:'';
       return `<tr>
         <td>${p.name} ${p.engineSpecific?'<span class="badge eng">ENG</span>':''}${fits}</td>
-        <td>${p.brand||''}</td><td class="pn">SKU: ${p.pn||'—'}<br>OEM: ${p.oem||'—'}${(p.crossrefs&&p.crossrefs.length)?'<br>'+crossrefLines(p.crossrefs).join('<br>'):''}</td><td>${RM(p.price)}</td>
+        <td>${p.brand||''}</td><td class="pn">SKU: ${p.pn||'—'}<br>Original OEM: ${p.oem||'—'}${(p.crossrefs&&p.crossrefs.length)?'<br>'+crossrefLines(p.crossrefs).join('<br>'):''}</td><td>${RM(p.price)}</td>
         <td><span class="${low?'badge low':'badge stockok'}">${p.qty}</span></td>
         <td>${p.bin||''}</td>
         <td class="flex">
@@ -685,7 +685,7 @@ function addFitRow(f){ const d=document.createElement('div'); d.innerHTML=fitRow
 function crossRowHTML(){
   return `<div class="xrefrow" style="display:grid;grid-template-columns:1.1fr 1fr 1.2fr auto;gap:8px;align-items:end;margin-bottom:8px">
     <div><label>Category</label><select class="xr-cat">
-      <option>Genuine OEM</option><option>Aftermarket</option>
+      <option>Brand OEM</option>
       <option>Superseded (auto)</option><option>Superseded (manual)</option>
       <option>Interchange</option></select></div>
     <div><label>Brand (if any)</label><input class="xr-brand" list="dl-brands" placeholder="e.g. 555, CTR"/></div>
@@ -696,7 +696,7 @@ function crossRowHTML(){
 function addCrossRow(cr){ const d=document.createElement('div'); d.innerHTML=crossRowHTML();
   const row=d.firstChild; document.getElementById('xref-rows').appendChild(row);
   if(cr){
-    row.querySelector('.xr-cat').value=cr.category||cr.label||'Aftermarket';
+    row.querySelector('.xr-cat').value=cr.category||cr.label||'Brand OEM';
     row.querySelector('.xr-brand').value=cr.brand||'';
     row.querySelector('.xr-num').value=cr.number||'';
   }
@@ -705,7 +705,7 @@ function addCrossRow(cr){ const d=document.createElement('div'); d.innerHTML=cro
 // Group cross-reference numbers by category for display.
 function crossrefLines(list){
   if(!list||!list.length) return [];
-  const order=['Genuine OEM','Aftermarket','Superseded (auto)','Superseded (manual)','Interchange'];
+  const order=['Brand OEM','Superseded (auto)','Superseded (manual)','Interchange'];
   const groups={};
   list.forEach(c=>{ const cat=c.category||c.label||'Other';
     (groups[cat]=groups[cat]||[]).push(((c.brand?c.brand+' ':'')+(c.number||'')).trim()); });
