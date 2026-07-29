@@ -250,13 +250,11 @@
 <datalist id="dl-makes"></datalist>
 <datalist id="dl-models"></datalist>
 <datalist id="dl-engines"></datalist>
-<datalist id="dl-xrlabels">
-  <option value="Genuine OEM"></option>
-  <option value="Superseded by"></option>
-  <option value="Replaces (old no.)"></option>
-  <option value="Interchange"></option>
-  <option value="555"></option><option value="CTR"></option>
-  <option value="Bosch"></option><option value="Denso"></option>
+<datalist id="dl-brands">
+  <option value="555"></option><option value="CTR"></option><option value="Bosch"></option>
+  <option value="Denso"></option><option value="Aisin"></option><option value="KYB"></option>
+  <option value="Sakura"></option><option value="NGK"></option><option value="MK Kashiyama"></option>
+  <option value="Exedy"></option><option value="Gates"></option><option value="Genuine"></option>
 </datalist>
 </div><!-- /#app -->
 
@@ -490,7 +488,7 @@ function runFind(){
     results = DB.parts.filter(p =>
       p.pn.toLowerCase().includes(q) || p.name.toLowerCase().includes(q) ||
       (p.brand||'').toLowerCase().includes(q) || (p.oem||'').toLowerCase().includes(q) ||
-      (p.crossrefs||[]).some(c=>((c.number||'')+' '+(c.label||'')).toLowerCase().includes(q)));
+      (p.crossrefs||[]).some(c=>((c.number||'')+' '+(c.brand||'')+' '+(c.category||c.label||'')).toLowerCase().includes(q)));
   } else {
     if(!sel.make){ box.innerHTML='<div class="panel empty">Pick a Make (or use search) to begin.</div>'; return; }
     results = DB.parts.filter(p => (p.fits||[]).some(f=>fitMatches(f,sel)));
@@ -526,7 +524,7 @@ function partCard(p, groupName){
         <div class="pname">${p.name} <span class="muted">— ${p.brand||''}</span>
           ${p.engineSpecific?'<span class="badge eng">ENGINE-SPECIFIC</span>':''}</div>
         <div class="pn">${p.pn}${p.oem?(' · OEM '+p.oem):''}</div>
-        ${(p.crossrefs&&p.crossrefs.length)?`<div class="pn">🔁 ${p.crossrefs.map(c=>(c.label?c.label+': ':'')+c.number).join(' · ')}</div>`:''}
+        ${(p.crossrefs&&p.crossrefs.length)?crossrefLines(p.crossrefs).map(l=>`<div class="pn">🔁 ${l}</div>`).join(''):''}
         ${p.dimensions?`<div class="pn">📏 ${p.dimensions}</div>`:''}
       </div>
       <div style="text-align:right">
@@ -546,14 +544,14 @@ function renderInventory(){
   document.getElementById('low-alerts').innerHTML = low.length ?
     `<div class="warnbox">🔔 <b>${low.length}</b> part(s) at/below reorder point: 
       ${low.map(p=>p.name+' ('+p.qty+')').join(', ')}</div>` : '';
-  const rows=DB.parts.filter(p=>!q||p.pn.toLowerCase().includes(q)||p.name.toLowerCase().includes(q)||(p.brand||'').toLowerCase().includes(q)||(p.oem||'').toLowerCase().includes(q)||(p.crossrefs||[]).some(c=>((c.number||'')+' '+(c.label||'')).toLowerCase().includes(q)));
+  const rows=DB.parts.filter(p=>!q||p.pn.toLowerCase().includes(q)||p.name.toLowerCase().includes(q)||(p.brand||'').toLowerCase().includes(q)||(p.oem||'').toLowerCase().includes(q)||(p.crossrefs||[]).some(c=>((c.number||'')+' '+(c.brand||'')+' '+(c.category||c.label||'')).toLowerCase().includes(q)));
   document.getElementById('inv-table').innerHTML =
     `<tr><th>Part</th><th>Brand</th><th>SKU / OEM</th><th>Price</th><th>Stock</th><th>Bin</th><th>Adjust</th><th>Edit</th></tr>`+
     rows.map(p=>{ const low=p.qty<=p.reorder;
       const fits=(p.fits&&p.fits.length)?`<div class="hint" style="margin-top:4px">🚗 ${fitsSummary(p.fits)}</div>`:'';
       return `<tr>
         <td>${p.name} ${p.engineSpecific?'<span class="badge eng">ENG</span>':''}${fits}</td>
-        <td>${p.brand||''}</td><td class="pn">SKU: ${p.pn||'—'}<br>OEM: ${p.oem||'—'}${(p.crossrefs&&p.crossrefs.length)?'<br>'+p.crossrefs.map(c=>(c.label?c.label+': ':'')+c.number).join('<br>'):''}</td><td>${RM(p.price)}</td>
+        <td>${p.brand||''}</td><td class="pn">SKU: ${p.pn||'—'}<br>OEM: ${p.oem||'—'}${(p.crossrefs&&p.crossrefs.length)?'<br>'+crossrefLines(p.crossrefs).join('<br>'):''}</td><td>${RM(p.price)}</td>
         <td><span class="${low?'badge low':'badge stockok'}">${p.qty}</span></td>
         <td>${p.bin||''}</td>
         <td class="flex">
@@ -685,16 +683,35 @@ function addFitRow(f){ const d=document.createElement('div'); d.innerHTML=fitRow
 }
 
 function crossRowHTML(){
-  return `<div class="xrefrow" style="display:grid;grid-template-columns:1fr 1.4fr auto;gap:8px;align-items:end;margin-bottom:8px">
-    <div><label>Label</label><input class="xr-label" list="dl-xrlabels" placeholder="Genuine OEM / 555 / Superseded by"/></div>
+  return `<div class="xrefrow" style="display:grid;grid-template-columns:1.1fr 1fr 1.2fr auto;gap:8px;align-items:end;margin-bottom:8px">
+    <div><label>Category</label><select class="xr-cat">
+      <option>Genuine OEM</option><option>Aftermarket</option>
+      <option>Superseded (auto)</option><option>Superseded (manual)</option>
+      <option>Interchange</option></select></div>
+    <div><label>Brand (if any)</label><input class="xr-brand" list="dl-brands" placeholder="e.g. 555, CTR"/></div>
     <div><label>Number</label><input class="xr-num" placeholder="04465-0D010"/></div>
     <button class="mini" onclick="this.parentElement.remove()" style="height:37px">✕</button>
   </div>`;
 }
 function addCrossRow(cr){ const d=document.createElement('div'); d.innerHTML=crossRowHTML();
   const row=d.firstChild; document.getElementById('xref-rows').appendChild(row);
-  if(cr){ row.querySelector('.xr-label').value=cr.label||''; row.querySelector('.xr-num').value=cr.number||''; }
+  if(cr){
+    row.querySelector('.xr-cat').value=cr.category||cr.label||'Aftermarket';
+    row.querySelector('.xr-brand').value=cr.brand||'';
+    row.querySelector('.xr-num').value=cr.number||'';
+  }
   return row;
+}
+// Group cross-reference numbers by category for display.
+function crossrefLines(list){
+  if(!list||!list.length) return [];
+  const order=['Genuine OEM','Aftermarket','Superseded (auto)','Superseded (manual)','Interchange'];
+  const groups={};
+  list.forEach(c=>{ const cat=c.category||c.label||'Other';
+    (groups[cat]=groups[cat]||[]).push(((c.brand?c.brand+' ':'')+(c.number||'')).trim()); });
+  return Object.keys(groups)
+    .sort((a,b)=>{const ia=order.indexOf(a),ib=order.indexOf(b);return (ia<0?99:ia)-(ib<0?99:ib);})
+    .map(cat=>cat+': '+groups[cat].join(' · '));
 }
 function startEdit(id){
   const p=DB.parts.find(x=>x.id===id); if(!p) return;
@@ -1020,7 +1037,8 @@ async function saveePart(){
     drive:r.querySelector('.fr-drive').value
   })).filter(f=>f.make&&f.model);
   const crossrefs=[...document.querySelectorAll('#xref-rows .xrefrow')].map(r=>({
-    label:r.querySelector('.xr-label').value.trim(),
+    category:r.querySelector('.xr-cat').value,
+    brand:r.querySelector('.xr-brand').value.trim(),
     number:r.querySelector('.xr-num').value.trim()
   })).filter(c=>c.number);
   const record={ pn,name,cat:v('a-cat'),brand:v('a-brand'),price,cost:parseFloat(v('a-cost'))||0,
