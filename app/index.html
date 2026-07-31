@@ -228,13 +228,17 @@
         <input id="a-dim" placeholder="e.g. Length 320mm · OD 45mm · Thread M12x1.25"/>
       </div>
 
-      <h2 style="margin:20px 0 8px">Brand OEM &amp; cross-references</h2>
-      <div class="hint">Add each brand's OEM number (555, CTR…), plus any superseded or interchange numbers. All are searchable. (The car maker's number goes in the "Original OEM" field above.)</div>
+      <h2 style="margin:20px 0 8px">Auto-supersede &amp; cross-references</h2>
+      <div class="hint"><b>Auto supersede</b> = other <b>genuine OEM</b> numbers that share the same part (e.g. a newer or older car using the same part) — add each one so any of them finds this part. <b>Cross reference</b> = aftermarket brand or interchange numbers. All are searchable.</div>
       <div id="xref-rows" style="margin-top:10px"></div>
       <button class="btn ghost" onclick="addCrossRow()">+ Add number</button>
 
       <h2 style="margin:20px 0 8px">Compatible vehicles (add as many as needed)</h2>
       <div class="hint">Leave a factor as "Any" if it doesn't affect fitment. Engine-specific parts (starters, ECUs) should set the engine.</div>
+      <div class="flex" style="margin:8px 0">
+        <input id="copy-from" list="dl-parts" placeholder="Same part, other brand? Copy vehicles from an existing part (SKU/name)" style="flex:1;min-width:0"/>
+        <button class="btn ghost" type="button" onclick="copyVehiclesFrom()">Copy vehicles</button>
+      </div>
       <div id="fit-rows" style="margin-top:10px"></div>
       <button class="btn ghost" onclick="addFitRow()">+ Add another vehicle</button>
 
@@ -256,6 +260,7 @@
   <option value="Sakura"></option><option value="NGK"></option><option value="MK Kashiyama"></option>
   <option value="Exedy"></option><option value="Gates"></option><option value="Genuine"></option>
 </datalist>
+<datalist id="dl-parts"></datalist>
 </div><!-- /#app -->
 
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
@@ -461,6 +466,8 @@ function refreshDatalists(){
   const fill=(id,arr)=>{ const el=document.getElementById(id);
     if(el) el.innerHTML=dedupeNice(arr).map(x=>`<option value="${esc(x)}"></option>`).join(''); };
   fill('dl-makes',makesArr); fill('dl-models',modelsArr); fill('dl-engines',enginesArr);
+  const pl=document.getElementById('dl-parts');
+  if(pl) pl.innerHTML=(DB.parts||[]).map(p=>`<option value="${esc(((p.pn||'')+' — '+(p.name||'')).trim())}"></option>`).join('');
 }
 function eqi(a,b){ return String(a||'').trim().toLowerCase()===String(b||'').trim().toLowerCase(); }
 function range(a,b){const r=[];for(let i=a;i<=b;i++)r.push(i);return r;}
@@ -723,12 +730,28 @@ function addFitRow(f){ const d=document.createElement('div'); d.innerHTML=fitRow
   return row;
 }
 
+// Copy compatible vehicles from an existing part (same part, different brand)
+// so you don't re-key fitments one by one.
+function copyVehiclesFrom(){
+  const raw=document.getElementById('copy-from').value.trim();
+  const msg=document.getElementById('add-msg');
+  if(!raw){ msg.style.color='#fca5a5'; msg.textContent='Type a part SKU or name to copy vehicles from.'; return; }
+  const key=raw.split(' — ')[0].trim().toLowerCase();
+  const src=DB.parts.find(p=>(p.pn||'').toLowerCase()===key)
+        || DB.parts.find(p=>(p.name||'').toLowerCase()===raw.toLowerCase())
+        || DB.parts.find(p=>((p.pn||'')+' '+(p.name||'')).toLowerCase().includes(key));
+  if(!src){ msg.style.color='#fca5a5'; msg.textContent='Could not find that part.'; return; }
+  const fits=(src.fits||[]);
+  if(!fits.length){ msg.style.color='#fca5a5'; msg.textContent='"'+(src.pn||src.name)+'" has no vehicles to copy.'; return; }
+  fits.forEach(f=>addFitRow(f));
+  document.getElementById('copy-from').value='';
+  msg.style.color='#86efac'; msg.textContent='Copied '+fits.length+' vehicle(s) from '+(src.pn||src.name)+'. Review and Save.';
+}
 function crossRowHTML(){
   return `<div class="xrefrow" style="display:grid;grid-template-columns:1.1fr 1fr 1.2fr auto;gap:8px;align-items:end;margin-bottom:8px">
     <div><label>Category</label><select class="xr-cat">
-      <option>Brand OEM</option>
-      <option>Superseded (auto)</option><option>Superseded (manual)</option>
-      <option>Interchange</option></select></div>
+      <option>Auto supersede</option>
+      <option>Cross reference</option></select></div>
     <div><label>Brand (if any)</label><input class="xr-brand" list="dl-brands" placeholder="e.g. 555, CTR"/></div>
     <div><label>Number</label><input class="xr-num" placeholder="04465-0D010"/></div>
     <button class="mini" onclick="this.parentElement.remove()" style="height:37px">✕</button>
@@ -737,18 +760,25 @@ function crossRowHTML(){
 function addCrossRow(cr){ const d=document.createElement('div'); d.innerHTML=crossRowHTML();
   const row=d.firstChild; document.getElementById('xref-rows').appendChild(row);
   if(cr){
-    row.querySelector('.xr-cat').value=cr.category||cr.label||'Brand OEM';
+    row.querySelector('.xr-cat').value=normXrefCat(cr.category||cr.label);
     row.querySelector('.xr-brand').value=cr.brand||'';
     row.querySelector('.xr-num').value=cr.number||'';
   }
   return row;
 }
+// Normalise any old/new category value into the two we use now.
+function normXrefCat(cat){
+  cat=String(cat||'').trim();
+  if(/auto/i.test(cat) && /supersed/i.test(cat)) return 'Auto supersede';
+  if(cat==='Auto supersede') return 'Auto supersede';
+  return 'Cross reference';
+}
 // Group cross-reference numbers by category for display.
 function crossrefLines(list){
   if(!list||!list.length) return [];
-  const order=['Brand OEM','Superseded (auto)','Superseded (manual)','Interchange'];
+  const order=['Auto supersede','Cross reference'];
   const groups={};
-  list.forEach(c=>{ const cat=c.category||c.label||'Other';
+  list.forEach(c=>{ const cat=normXrefCat(c.category||c.label);
     (groups[cat]=groups[cat]||[]).push(((c.brand?c.brand+' ':'')+(c.number||'')).trim()); });
   return Object.keys(groups)
     .sort((a,b)=>{const ia=order.indexOf(a),ib=order.indexOf(b);return (ia<0?99:ia)-(ib<0?99:ib);})
@@ -797,6 +827,7 @@ function resetAddForm(){
   document.getElementById('a-engspec').value='no';
   document.getElementById('fit-rows').innerHTML=''; addFitRow();
   document.getElementById('xref-rows').innerHTML='';
+  var cf=document.getElementById('copy-from'); if(cf) cf.value='';
 }
 
 // ------------------------------------------------------------------ SKU GENERATION
