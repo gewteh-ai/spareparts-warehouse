@@ -296,30 +296,51 @@ function cloudConfigured(){
 }
 
 window.addEventListener('load', boot);
-async function boot(){
-  // Remove any old service worker + caches. Earlier versions cached the
-  // database responses, which hid newly-saved parts. The app now always loads
-  // live data (it needs the internet for the shared cloud database anyway).
-  try{
-    if('serviceWorker' in navigator){
-      const regs=await navigator.serviceWorker.getRegistrations();
-      for(const r of regs){ await r.unregister(); }
-    }
-    if(window.caches){ const ks=await caches.keys(); for(const k of ks){ await caches.delete(k); } }
-  }catch(e){}
-  initFind(); addFitRow();
-
-  if(!cloudConfigured()){
-    showLogin();
-    document.getElementById('login-msg').style.color='#fca5a5';
-    document.getElementById('login-msg').innerHTML =
-      'Cloud not configured yet. Add your Supabase URL and anon key in index.html (see SETUP_CLOUD.md).';
-    return;
+// Safety net: if anything errors before the UI shows, reveal the login screen
+// with the message instead of a blank page.
+window.addEventListener('error', function(ev){
+  var app=document.getElementById('app'), login=document.getElementById('login');
+  if(app&&login&&app.style.display==='none'&&login.style.display==='none'){
+    login.style.display='';
+    var m=document.getElementById('login-msg');
+    if(m){ m.style.color='#fca5a5'; m.textContent='Error: '+((ev&&ev.message)||'startup failed')+' — please screenshot this.'; }
   }
-  sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-  const { data:{ session } } = await sb.auth.getSession();
-  if(session){ enterApp(); } else { showLogin(); }
-  sb.auth.onAuthStateChange((_e, s)=>{ if(s){ enterApp(); } else { showLogin(); } });
+});
+async function boot(){
+  try{
+    try{
+      if('serviceWorker' in navigator){
+        const regs=await navigator.serviceWorker.getRegistrations();
+        for(const r of regs){ await r.unregister(); }
+      }
+      if(window.caches){ const ks=await caches.keys(); for(const k of ks){ await caches.delete(k); } }
+    }catch(e){}
+    initFind(); addFitRow();
+
+    if(!cloudConfigured()){
+      showLogin();
+      document.getElementById('login-msg').style.color='#fca5a5';
+      document.getElementById('login-msg').innerHTML =
+        'Cloud not configured yet. Add your Supabase URL and anon key in index.html (see SETUP_CLOUD.md).';
+      return;
+    }
+    if(typeof supabase==='undefined' || !supabase || !supabase.createClient){
+      showLogin();
+      const m=document.getElementById('login-msg');
+      if(m){ m.style.color='#fca5a5'; m.textContent='Could not load the sign-in library (network issue). Please reload the page.'; }
+      return;
+    }
+    sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    const { data:{ session } } = await sb.auth.getSession();
+    if(session){ enterApp(); } else { showLogin(); }
+    sb.auth.onAuthStateChange((_e, s)=>{ if(s){ enterApp(); } else { showLogin(); } });
+  }catch(err){
+    try{
+      showLogin();
+      const m=document.getElementById('login-msg');
+      if(m){ m.style.color='#fca5a5'; m.textContent='Startup error: '+((err&&err.message)||err)+' — please screenshot this.'; }
+    }catch(e){}
+  }
 }
 
 function showLogin(){
