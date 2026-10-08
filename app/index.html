@@ -296,16 +296,38 @@ function cloudConfigured(){
 }
 
 window.addEventListener('load', boot);
-// Safety net: if anything errors before the UI shows, reveal the login screen
-// with the message instead of a blank page.
+
+// Reveal the login screen with a message, so the page is never left blank.
+function failToLogin(message){
+  var app=document.getElementById('app'), login=document.getElementById('login');
+  if(!login) return;
+  if(app) app.style.display='none';
+  login.style.display='';
+  var m=document.getElementById('login-msg');
+  if(m){ m.style.color='#fca5a5'; m.innerHTML=message; }
+}
+// Safety net: if anything errors (or a promise rejects) before the UI shows,
+// reveal the login screen with the message instead of a blank page.
 window.addEventListener('error', function(ev){
   var app=document.getElementById('app'), login=document.getElementById('login');
   if(app&&login&&app.style.display==='none'&&login.style.display==='none'){
-    login.style.display='';
-    var m=document.getElementById('login-msg');
-    if(m){ m.style.color='#fca5a5'; m.textContent='Error: '+((ev&&ev.message)||'startup failed')+' — please screenshot this.'; }
+    failToLogin('Error: '+((ev&&ev.message)||'startup failed')+' — please screenshot this.');
   }
 });
+window.addEventListener('unhandledrejection', function(ev){
+  var app=document.getElementById('app'), login=document.getElementById('login');
+  if(app&&login&&app.style.display==='none'&&login.style.display==='none'){
+    var r=ev&&ev.reason; failToLogin('Startup problem: '+((r&&r.message)||r||'unknown')+' — please screenshot this.');
+  }
+});
+// Reject a promise if it takes longer than `ms` — stops a paused/offline
+// cloud from hanging startup forever (which is what blanks the page).
+function withTimeout(promise, ms, label){
+  return Promise.race([
+    promise,
+    new Promise((_,rej)=>setTimeout(()=>rej(new Error((label||'request')+' timed out after '+ms+'ms')), ms))
+  ]);
+}
 async function boot(){
   try{
     try{
@@ -331,15 +353,23 @@ async function boot(){
       return;
     }
     sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-    const { data:{ session } } = await sb.auth.getSession();
-    if(session){ enterApp(); } else { showLogin(); }
+    // Show the login screen immediately as a safe default. The cloud check
+    // below only *upgrades* us into the app; it can never leave us blank.
+    showLogin();
+    let session=null;
+    try{
+      const res = await withTimeout(sb.auth.getSession(), 8000, 'Cloud sign-in check');
+      session = res && res.data ? res.data.session : null;
+    }catch(e){
+      failToLogin(
+        'Can\'t reach the cloud — the Supabase project may be <b>paused</b> or offline.<br>'+
+        'Resume it at <b>supabase.com/dashboard</b>, wait ~2 min, then reload this page.<br>'+
+        '<span class="muted">('+((e&&e.message)||e)+')</span>');
+    }
+    if(session){ enterApp(); }
     sb.auth.onAuthStateChange((_e, s)=>{ if(s){ enterApp(); } else { showLogin(); } });
   }catch(err){
-    try{
-      showLogin();
-      const m=document.getElementById('login-msg');
-      if(m){ m.style.color='#fca5a5'; m.textContent='Startup error: '+((err&&err.message)||err)+' — please screenshot this.'; }
-    }catch(e){}
+    failToLogin('Startup error: '+((err&&err.message)||err)+' — please screenshot this.');
   }
 }
 
@@ -351,7 +381,11 @@ async function enterApp(){
   document.getElementById('login').style.display='none';
   document.getElementById('app').style.display='';
   try{ const { data } = await sb.auth.getUser(); document.getElementById('who').textContent = data?.user?.email || ''; }catch(e){}
-  await loadParts();
+  try{ await withTimeout(loadParts(), 12000, 'Loading parts'); }catch(e){
+    const diag=document.getElementById('diag');
+    if(diag){ diag.style.display='';
+      diag.innerHTML='⚠️ Could not load parts: '+((e&&e.message)||e)+'. The cloud may be paused — resume it and reopen this tab.'; }
+  }
   showTab('find');
   subscribeRealtime();
 }
